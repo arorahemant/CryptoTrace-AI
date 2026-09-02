@@ -59,6 +59,15 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Production API endpoint configuration | PARTIAL | Production frontend requests now fail closed unless `NEXT_PUBLIC_API_URL` is explicitly set; hosted HTTPS endpoint is not yet provisioned. |
 | Production database mode guard | COMPLETE | Backend rejects SQLite URLs and `USE_SQLITE=true` when `DEMO_MODE=false`; demo fallback remains available only in demo mode and regression-tested |
 
+## App-first release prerequisites - 2026-09-03
+
+| Gate | Status | Evidence / limitation |
+|---|---|---|
+| Android build toolchain | BLOCKED | Java 17 is available, but Android SDK, Gradle, ADB, and an emulator/device are not available; no APK has been generated or claimed |
+| Mobile shell dependency | NOT STARTED | Capacitor was evaluated but not committed because no hosted frontend URL or Android build/validation environment is available; the existing web frontend remains the functional source |
+| Hosted frontend/API | BLOCKED | No hosted HTTPS endpoint or deployment credentials are configured; production API client now fails closed without `NEXT_PUBLIC_API_URL` |
+| Mobile workflow validation | BLOCKED | No real phone/emulator and no browser session are available for login-to-report validation |
+
 ## Frontend architecture preparation - 2026-09-03
 
 | Gate | Status | Evidence / limitation |
