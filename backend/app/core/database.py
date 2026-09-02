@@ -12,13 +12,22 @@ from app.core.config import settings
 
 def _get_database_url() -> str:
     """
-    Determine the database URL. Falls back to SQLite if PostgreSQL
-    is unavailable (no Docker on dev machine).
+    Determine the database URL without weakening production configuration.
+
+    SQLite is a deliberate local/demo fallback. Production must use the
+    configured PostgreSQL URL and fails closed if a SQLite URL or override is
+    supplied accidentally.
     """
     url = settings.DATABASE_URL
+    sqlite_override = os.environ.get("USE_SQLITE", "").lower() == "true"
+
+    if not settings.DEMO_MODE and ("sqlite" in url.lower() or sqlite_override):
+        raise RuntimeError(
+            "SQLite is only supported when DEMO_MODE=true; configure PostgreSQL for production"
+        )
 
     # If explicitly set to SQLite, use as-is
-    if "sqlite" in url:
+    if "sqlite" in url.lower():
         return url
 
     # For prototype without Docker: fall back to SQLite

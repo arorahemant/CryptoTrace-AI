@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from fastapi.routing import APIRoute
 
 from app.api.cases import _get_authorized_case, _get_user, router
-from app.core.config import Settings
-from app.core.database import Base
+from app.core.config import Settings, settings
+from app.core.database import Base, _get_database_url
 from app.core.security import create_access_token, decode_access_token
 from app.models.models import (
     Case,
@@ -63,6 +63,24 @@ def test_valid_production_secret_is_accepted_without_embedding_a_secret():
     source_text = source.read_text(encoding="utf-8")
     assert 'SECRET_KEY: str = "' not in source_text
     assert 'SECRET_KEY: Optional[str] = "' not in source_text
+
+
+def test_production_rejects_explicit_sqlite_database_url(monkeypatch):
+    monkeypatch.setattr(settings, "DEMO_MODE", False)
+    monkeypatch.setattr(settings, "DATABASE_URL", "sqlite+aiosqlite:///unsafe-production.db")
+    monkeypatch.delenv("USE_SQLITE", raising=False)
+
+    with pytest.raises(RuntimeError, match="SQLite is only supported"):
+        _get_database_url()
+
+
+def test_production_rejects_sqlite_override(monkeypatch):
+    monkeypatch.setattr(settings, "DEMO_MODE", False)
+    monkeypatch.setattr(settings, "DATABASE_URL", "postgresql+asyncpg://configured")
+    monkeypatch.setenv("USE_SQLITE", "true")
+
+    with pytest.raises(RuntimeError, match="configure PostgreSQL"):
+        _get_database_url()
 
 
 def test_each_case_route_resolves_one_user_dependency():
