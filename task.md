@@ -106,3 +106,10 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Forensic Report | PARTIAL | Structured report generation/retrieval now identifies current-investigation output and Demo context; Stitch document treatment remains |
 | Audit Log | COMPLETE | Authorized case-scoped API and investigator UI are implemented and build/test covered |
 | Settings | PARTIAL | Authenticated read-only Settings route and Dashboard entry now show account, security posture, provenance guidance, and active theme without exposing secrets; browser verification remains unavailable |
+
+## Accessibility and touch hardening - 2026-09-03
+
+| Surface | Status | Evidence / limitation |
+|---|---|---|
+| Dashboard case navigation | PARTIAL | Case rows now support keyboard activation and visible focus; actual browser/assistive-technology validation is unavailable |
+| Investigation controls | PARTIAL | Primary actions, navigation, money-trail focus, transaction selection, and replay controls have phone-sized targets and accessible labels; touch/browser validation is unavailable |

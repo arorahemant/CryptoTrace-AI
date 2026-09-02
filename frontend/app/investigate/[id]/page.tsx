@@ -694,7 +694,7 @@ function InvestigateContent() {
       {/* ─── Top Bar ────────────────────────────────────────── */}
       <header className="ct-investigation-header h-12 border-b border-[#1e293b] bg-[#111827]/90 backdrop-blur-sm flex items-center px-4 justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')} className="p-1 rounded hover:bg-[#1e293b] text-slate-400 hover:text-white">
+          <button type="button" onClick={() => router.push('/dashboard')} aria-label="Back to case dashboard" className="min-h-10 min-w-10 flex items-center justify-center rounded hover:bg-[#1e293b] text-slate-400 hover:text-white">
             <ChevronLeft className="w-4 h-4" />
           </button>
           <div className="w-6 h-6 rounded bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
@@ -720,7 +720,7 @@ function InvestigateContent() {
             <button
               onClick={runInvestigation}
               disabled={investigating}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg text-xs font-medium
+              className="min-h-10 flex items-center gap-1.5 px-4 py-1.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg text-xs font-medium
                 hover:from-blue-500 hover:to-cyan-500 disabled:opacity-50 shadow-lg shadow-blue-500/20"
             >
               {investigating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
@@ -729,15 +729,15 @@ function InvestigateContent() {
           ) : (
             <>
               <button onClick={startReplay}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-cyan-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
+                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-cyan-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
                 <Play className="w-3 h-3" /> REPLAY
               </button>
               <button onClick={() => setActiveTab('ai')}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-purple-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
+                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-purple-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
                 <MessageSquare className="w-3 h-3" /> ASK AI
               </button>
               <button onClick={generateReport} disabled={generatingReport}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-green-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
+                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-green-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
                 {generatingReport ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
                 REPORT
               </button>
@@ -775,7 +775,7 @@ function InvestigateContent() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs mb-0.5 transition-all
+                className={`w-full min-h-10 flex items-center gap-2 px-3 py-2 rounded-lg text-xs mb-0.5 transition-all
                   ${activeTab === tab.id ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'text-slate-400 hover:bg-[#1e293b] hover:text-white'}`}
               >
                 <tab.icon className="w-3.5 h-3.5" />
@@ -792,7 +792,7 @@ function InvestigateContent() {
             <div className="p-3 mt-auto border-t border-[#1e293b]">
               <button
                 onClick={() => setShowMoneyTrail(!showMoneyTrail)}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold transition-all
+                className={`w-full min-h-11 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold transition-all
                   ${showMoneyTrail
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
                     : 'bg-blue-500/10 text-blue-400 border border-blue-500/30 hover:bg-blue-500/20'

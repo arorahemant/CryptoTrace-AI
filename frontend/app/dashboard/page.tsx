@@ -109,7 +109,7 @@ export default function DashboardPage() {
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white
+            className="min-h-11 flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white
               rounded-lg font-medium text-sm hover:from-blue-500 hover:to-cyan-500 transition-all
               shadow-lg shadow-blue-500/20"
           >
@@ -162,7 +162,7 @@ export default function DashboardPage() {
             <p className="text-slate-400 text-sm mb-6">Create your first investigation case to get started</p>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg font-medium text-sm"
+              className="min-h-11 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg font-medium text-sm"
             >
               Create First Case
             </button>
@@ -172,9 +172,18 @@ export default function DashboardPage() {
             {cases.map((c) => (
               <div
                 key={c.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open case ${c.case_number}: ${c.title}`}
                 onClick={() => router.push(`/investigate/${c.id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    router.push(`/investigate/${c.id}`);
+                  }
+                }}
                 className="bg-[#111827] border border-[#1e293b] rounded-xl p-5 cursor-pointer
-                  hover:border-blue-500/30 hover:bg-[#141c2b] transition-all duration-200 group"
+                  hover:border-blue-500/30 hover:bg-[#141c2b] transition-all duration-200 group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0">
