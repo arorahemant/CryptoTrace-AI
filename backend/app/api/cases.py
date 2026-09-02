@@ -53,13 +53,10 @@ async def _get_user(
     )
 
 
-router.dependencies.append(Depends(_get_user))
-
-
 async def _get_authorized_case(
     case_id: str,
     db: AsyncSession,
-    authorization: Optional[str] = None,
+    user: User,
 ) -> Case:
     """Resolve a case while enforcing owner/supervisor/admin access.
 
@@ -73,7 +70,6 @@ async def _get_authorized_case(
     case = await db.get(Case, case_uuid)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
-    user = await _get_user(db, authorization)
     if user.role not in (UserRole.SUPERVISOR, UserRole.ADMIN) and case.investigator_id != user.id:
         raise HTTPException(status_code=404, detail="Case not found")
     return case
@@ -90,11 +86,11 @@ def _generate_case_number() -> str:
 async def create_case(
     request: CaseCreate,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
     request_context: Request = None,
+    current_user: User = Depends(_get_user),
 ):
     """Create a new investigation case."""
-    user = await _get_user(db, authorization)
+    user = current_user
 
     blockchain = Blockchain(request.blockchain.value)
     # Validate wallet address format
@@ -137,10 +133,10 @@ async def create_case(
 @router.get("", response_model=CaseListResponse)
 async def list_cases(
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """List all cases for the current user."""
-    user = await _get_user(db, authorization)
+    user = current_user
 
     query = select(Case)
     if user.role not in (UserRole.SUPERVISOR, UserRole.ADMIN):
@@ -158,12 +154,11 @@ async def list_cases(
 async def get_case(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
     request_context: Request = None,
     current_user: User = Depends(_get_user),
 ):
     """Get case details with investigation summary."""
-    case = await _get_authorized_case(case_id, db, authorization)
+    case = await _get_authorized_case(case_id, db, current_user)
     record_audit_event(
         db,
         user=current_user,
@@ -215,7 +210,6 @@ async def investigate(
     case_id: str,
     request: InvestigateRequest = InvestigateRequest(),
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
     request_context: Request = None,
     current_user: User = Depends(_get_user),
 ):
@@ -223,7 +217,7 @@ async def investigate(
     Run the complete investigation pipeline for a case.
     This is the PRIMARY action — trace, analyze, detect, assess.
     """
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     service = InvestigationService(db)
 
     try:
@@ -255,10 +249,10 @@ async def investigate(
 async def get_graph(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """Get the investigation graph for visualization."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     service = InvestigationService(db)
     try:
         return await service.get_graph_data(case_id)
@@ -270,10 +264,10 @@ async def get_graph(
 async def get_wallets(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """Get all discovered wallets for a case."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(Wallet).where(Wallet.case_id == uuid.UUID(case_id))
     )
@@ -304,10 +298,10 @@ async def get_wallets(
 async def get_transactions(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """Get all traced transactions for a case."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(Transaction)
         .where(Transaction.case_id == uuid.UUID(case_id))
@@ -342,10 +336,10 @@ async def get_transactions(
 async def get_findings(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """Get suspicious pattern findings for a case."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(PatternFinding).where(PatternFinding.case_id == uuid.UUID(case_id))
     )
@@ -375,12 +369,11 @@ async def save_evidence(
     case_id: str,
     request: EvidenceCreate,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
     request_context: Request = None,
     current_user: User = Depends(_get_user),
 ):
     """Persist an investigator-selected evidence item for this case."""
-    case = await _get_authorized_case(case_id, db, authorization)
+    case = await _get_authorized_case(case_id, db, current_user)
 
     if request.finding_id:
         finding = await db.get(PatternFinding, request.finding_id)
@@ -452,10 +445,10 @@ async def save_evidence(
 async def get_evidence(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """Get all evidence items for a case."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(Evidence).where(Evidence.case_id == uuid.UUID(case_id))
     )
@@ -486,10 +479,10 @@ async def get_evidence(
 async def get_timeline(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """Get chronological investigation timeline."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(InvestigationEvent)
         .where(InvestigationEvent.case_id == uuid.UUID(case_id))
@@ -521,10 +514,10 @@ async def get_timeline(
 async def get_fund_flow(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """Get fund flow paths."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(FundFlow)
         .where(FundFlow.case_id == uuid.UUID(case_id))
@@ -554,10 +547,10 @@ async def why_flagged(
     case_id: str,
     wallet_address: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """WHY WAS THIS FLAGGED? — Signature feature."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     service = InvestigationService(db)
     try:
         return await service.get_why_explanation(case_id, wallet_address)
@@ -569,10 +562,10 @@ async def why_flagged(
 async def get_replay(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """Get replay events for chronological animation."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     service = InvestigationService(db)
     events = await service.get_replay_events(case_id)
     return {
@@ -587,10 +580,10 @@ async def ai_query(
     case_id: str,
     request: AIQueryRequest,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """AI Investigation Copilot — grounded answers from case data."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     question = request.question
     if len(question) < 3:
         raise HTTPException(status_code=400, detail="Question is too short")
@@ -603,12 +596,11 @@ async def ai_query(
 async def generate_report(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
     request_context: Request = None,
     current_user: User = Depends(_get_user),
 ):
     """Generate investigation report."""
-    case = await _get_authorized_case(case_id, db, authorization)
+    case = await _get_authorized_case(case_id, db, current_user)
 
     # Build report from all case data
     ai_service = AIService(db)
@@ -760,10 +752,10 @@ async def generate_report(
 async def get_report(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(_get_user),
 ):
     """Get the latest report for a case."""
-    await _get_authorized_case(case_id, db, authorization)
+    await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(Report)
         .where(Report.case_id == uuid.UUID(case_id))

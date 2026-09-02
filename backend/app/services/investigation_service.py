@@ -4,6 +4,7 @@ Orchestrates the full investigation pipeline:
 Trace → Graph → Fund Flow → Patterns → Risk → Evidence → Timeline
 """
 import logging
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
@@ -17,6 +18,7 @@ from app.models.models import (
     AttributionConfidence,
 )
 from app.providers import get_provider
+from app.providers.base import BlockchainProvider
 from app.providers.demo import DemoProvider
 from app.engines.trace_engine import TraceEngine
 from app.engines.graph_engine import GraphEngine
@@ -24,6 +26,14 @@ from app.engines.pattern_engine import PatternEngine
 from app.engines.risk_engine import RiskEngine
 
 logger = logging.getLogger(__name__)
+_investigation_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_investigation_lock(case_id: str) -> asyncio.Lock:
+    """Return the process-local lock used to serialize one case's run."""
+    # The lookup/creation has no await point, so concurrent coroutines in the
+    # same event loop cannot create two locks for the same case.
+    return _investigation_locks.setdefault(case_id, asyncio.Lock())
 
 
 class InvestigationService:
@@ -32,15 +42,33 @@ class InvestigationService:
     This is the primary service that connects all engines.
     """
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, provider: Optional[BlockchainProvider] = None):
         self.db = db
-        self.provider = get_provider("demo")
+        self.provider = provider or get_provider("demo")
         self.trace_engine = TraceEngine(self.provider)
         self.graph_engine = GraphEngine()
         self.pattern_engine = PatternEngine()
         self.risk_engine = RiskEngine()
 
     async def run_investigation(
+        self,
+        case_id: str,
+        max_hops: int = 5,
+        min_amount: float = 0.001,
+        time_window_hours: int = 720,
+        direction: str = "outgoing",
+    ) -> Dict[str, Any]:
+        """Run one case investigation at a time and reuse persisted results."""
+        async with _get_investigation_lock(str(case_id)):
+            return await self._run_investigation(
+                case_id=case_id,
+                max_hops=max_hops,
+                min_amount=min_amount,
+                time_window_hours=time_window_hours,
+                direction=direction,
+            )
+
+    async def _run_investigation(
         self,
         case_id: str,
         max_hops: int = 5,
@@ -64,10 +92,24 @@ class InvestigationService:
 
         Returns a comprehensive investigation result.
         """
-        # 1. Fetch case
-        case = await self.db.get(Case, uuid.UUID(case_id))
+        # 1. Fetch and lock the case. PostgreSQL holds this row lock through
+        # the request transaction; the process-local lock above covers the
+        # SQLite/demo path where FOR UPDATE is a no-op.
+        case = await self.db.scalar(
+            select(Case)
+            .where(Case.id == uuid.UUID(case_id))
+            .with_for_update()
+        )
         if not case:
             raise ValueError(f"Case {case_id} not found")
+
+        # A case has one current investigation snapshot. Repeated clicks or
+        # retries after a successful request return that snapshot instead of
+        # appending another set of child rows. A failed request is rolled back
+        # by the request transaction, so it remains retryable.
+        if await self._has_persisted_investigation(case):
+            logger.info("Reusing persisted investigation for case %s", case.case_number)
+            return await self._load_persisted_result(case)
 
         # Update case status
         case.status = CaseStatus.INVESTIGATING
@@ -162,6 +204,11 @@ class InvestigationService:
             risk_data=risk_results,
         )
 
+        case.status = (
+            CaseStatus.REVIEW
+            if stats.get("trace_status") == "partial"
+            else CaseStatus.COMPLETED
+        )
         await self.db.flush()
 
         overall_risk = self.risk_engine.get_overall_risk(risk_results)
@@ -169,7 +216,7 @@ class InvestigationService:
         return {
             "case_id": str(case.id),
             "case_number": case.case_number,
-            "status": "investigating",
+            "status": case.status.value,
             "is_demo": stats.get("is_demo", True),
             "stats": stats,
             "graph": graph_data,
@@ -195,6 +242,201 @@ class InvestigationService:
                 ),
                 "max_hops": stats.get("max_hop_reached", 0),
                 "paths_count": len(paths),
+            },
+        }
+
+    async def _has_persisted_investigation(self, case: Case) -> bool:
+        """Return whether this case already has an investigation snapshot."""
+        if case.status in (CaseStatus.COMPLETED, CaseStatus.REVIEW):
+            return True
+
+        # Older demo databases predate the completed/review status update.
+        # Their wallet rows still identify a previously materialized run.
+        wallet_id = await self.db.scalar(
+            select(Wallet.id).where(Wallet.case_id == case.id).limit(1)
+        )
+        return wallet_id is not None
+
+    async def _load_persisted_result(self, case: Case) -> Dict[str, Any]:
+        """Reconstruct the public result from the case's stored snapshot."""
+        wallet_rows = (
+            await self.db.execute(
+                select(Wallet)
+                .where(Wallet.case_id == case.id)
+                .order_by(Wallet.created_at, Wallet.address)
+            )
+        ).scalars().all()
+        transaction_rows = (
+            await self.db.execute(
+                select(Transaction)
+                .where(Transaction.case_id == case.id)
+                .order_by(Transaction.timestamp, Transaction.hash)
+            )
+        ).scalars().all()
+        finding_rows = (
+            await self.db.execute(
+                select(PatternFinding)
+                .where(PatternFinding.case_id == case.id)
+                .order_by(PatternFinding.created_at, PatternFinding.id)
+            )
+        ).scalars().all()
+        risk_rows = (
+            await self.db.execute(
+                select(RiskAssessment)
+                .where(RiskAssessment.case_id == case.id)
+                .order_by(RiskAssessment.wallet_address)
+            )
+        ).scalars().all()
+        vasp_rows = (
+            await self.db.execute(
+                select(VASPAttribution)
+                .where(VASPAttribution.case_id == case.id)
+                .order_by(VASPAttribution.wallet_address)
+            )
+        ).scalars().all()
+
+        raw_wallets = {
+            wallet.address: {
+                "address": wallet.address,
+                "label": wallet.label,
+                "is_reported": wallet.is_reported,
+                "is_intermediary": wallet.is_intermediary,
+                "is_destination": wallet.is_destination,
+                "is_suspicious": wallet.is_suspicious,
+                "hop_distance": wallet.hop_distance,
+                "total_received": wallet.total_received or 0.0,
+                "total_sent": wallet.total_sent or 0.0,
+                "transaction_count": wallet.transaction_count or 0,
+            }
+            for wallet in wallet_rows
+        }
+        if not raw_wallets:
+            raw_wallets[case.reported_wallet] = {
+                "address": case.reported_wallet,
+                "is_reported": True,
+                "is_intermediary": False,
+                "is_destination": False,
+                "is_suspicious": True,
+                "hop_distance": 0,
+                "total_received": 0.0,
+                "total_sent": 0.0,
+                "transaction_count": 0,
+            }
+
+        raw_transactions = [
+            {
+                "hash": transaction.hash,
+                "from_address": transaction.from_address,
+                "to_address": transaction.to_address,
+                "amount": transaction.amount,
+                "asset": transaction.asset,
+                "timestamp": transaction.timestamp,
+                "is_suspicious": transaction.is_suspicious,
+                "hop_number": transaction.hop_number,
+            }
+            for transaction in transaction_rows
+        ]
+
+        self.graph_engine.build_graph(raw_transactions, raw_wallets)
+        primary_path = self.graph_engine.get_primary_path(case.reported_wallet)
+        intermediaries = self.graph_engine.get_intermediaries()
+
+        vasp_data = {
+            record.wallet_address: {
+                "entity_name": record.entity_name,
+                "entity_type": record.entity_type,
+                "attribution_type": record.attribution_type,
+                "confidence": record.confidence.value if record.confidence else "unknown",
+                "source": record.source,
+                "supporting_evidence": record.supporting_evidence,
+            }
+            for record in vasp_rows
+        }
+        risk_results = {
+            record.wallet_address: {
+                "wallet_address": record.wallet_address,
+                "risk_score": record.risk_score,
+                "risk_category": record.risk_category.value if record.risk_category else "low",
+                "contributing_signals": record.contributing_signals or [],
+                "explanation": record.explanation or "",
+            }
+            for record in risk_rows
+        }
+        findings = [
+            {
+                "pattern_type": record.pattern_type.value if record.pattern_type else "",
+                "pattern_name": record.pattern_name,
+                "description": record.description,
+                "severity": record.severity.value if record.severity else "medium",
+                "confidence": record.confidence,
+                "trigger": record.trigger,
+                "affected_wallets": record.affected_wallets or [],
+                "supporting_transaction_ids": record.supporting_transaction_ids or [],
+                "metadata": record.metadata_ or {},
+            }
+            for record in finding_rows
+        ]
+
+        max_hop = max((tx.get("hop_number", 0) or 0 for tx in raw_transactions), default=0)
+        trace_status = "partial" if case.status == CaseStatus.REVIEW else "complete"
+        stats = {
+            "total_transactions": len(raw_transactions),
+            "total_wallets": len(raw_wallets),
+            "max_hop_reached": max_hop,
+            "total_amount_traced": sum(tx.get("amount", 0) for tx in raw_transactions),
+            "provider": self.provider.provider_name,
+            "is_demo": case.is_demo,
+            "provider_errors": 0,
+            "malformed_transactions": 0,
+            "trace_status": trace_status,
+            "trace_warning": (
+                "Trace incomplete: one or more provider responses were unavailable "
+                "or malformed; results may be incomplete."
+                if trace_status == "partial"
+                else None
+            ),
+            "traced_transactions": len(raw_transactions),
+            "discovered_wallets": len(raw_wallets),
+            "hops_completed": max_hop,
+            "findings": len(findings),
+        }
+        graph_data = self.graph_engine.serialize_for_frontend(
+            primary_path=primary_path,
+            vasp_data=vasp_data,
+            risk_data=risk_results,
+        )
+        overall_risk = self.risk_engine.get_overall_risk(risk_results)
+
+        return {
+            "case_id": str(case.id),
+            "case_number": case.case_number,
+            "status": case.status.value,
+            "is_demo": case.is_demo,
+            "stats": stats,
+            "graph": graph_data,
+            "primary_path": primary_path,
+            "intermediaries": intermediaries,
+            "findings": findings,
+            "risk": {
+                "overall": overall_risk,
+                "by_wallet": {
+                    address: {
+                        "risk_score": risk["risk_score"],
+                        "risk_category": risk["risk_category"],
+                        "signals_count": len(risk["contributing_signals"]),
+                    }
+                    for address, risk in risk_results.items()
+                },
+            },
+            "vasp_attributions": vasp_data,
+            "fund_flow_summary": {
+                "total_amount_origin": sum(
+                    tx["amount"]
+                    for tx in raw_transactions
+                    if tx["from_address"] == case.reported_wallet
+                ),
+                "max_hops": max_hop,
+                "paths_count": 1 if primary_path else 0,
             },
         }
 

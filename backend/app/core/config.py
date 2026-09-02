@@ -2,8 +2,31 @@
 CryptoTrace AI - Application Configuration
 Loads settings from environment variables with sensible defaults.
 """
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import secrets
 from typing import Optional
+
+from pydantic import model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+_MIN_SECRET_KEY_LENGTH = 32
+_UNSAFE_SECRET_PREFIXES = (
+    "change-me-in-production",
+    "change_me_in_production",
+    "changeme",
+    "default",
+    "development",
+    "test-secret",
+)
+
+
+def _is_unsafe_secret(value: str) -> bool:
+    normalized = value.strip().lower()
+    return (
+        len(normalized) < _MIN_SECRET_KEY_LENGTH
+        or len(set(normalized)) < 4
+        or any(normalized.startswith(prefix) for prefix in _UNSAFE_SECRET_PREFIXES)
+    )
 
 
 class Settings(BaseSettings):
@@ -20,7 +43,11 @@ class Settings(BaseSettings):
     DATABASE_SYNC_URL: str = "postgresql://cryptotrace:cryptotrace@localhost:5432/cryptotrace"
 
     # Authentication
-    SECRET_KEY: str = "CHANGE-ME-IN-PRODUCTION-use-openssl-rand-hex-32"
+    # A production signing key must be injected through the environment (or a
+    # secrets manager). Demo mode gets an ephemeral process key when no key is
+    # configured, which keeps local startup convenient without embedding a
+    # reusable signing secret in source.
+    SECRET_KEY: Optional[str] = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     ALGORITHM: str = "HS256"
 
@@ -41,7 +68,18 @@ class Settings(BaseSettings):
     # Demo Mode
     DEMO_MODE: bool = True
 
-settings = Settings()
+    @model_validator(mode="after")
+    def validate_secret_key(self):
+        configured_secret = (self.SECRET_KEY or "").strip()
+        if _is_unsafe_secret(configured_secret):
+            if not self.DEMO_MODE:
+                raise ValueError(
+                    "SECRET_KEY must be a configured random value of at least 32 characters when DEMO_MODE=false"
+                )
+            self.SECRET_KEY = secrets.token_urlsafe(32)
+        else:
+            self.SECRET_KEY = configured_secret
+        return self
 
-if not settings.DEMO_MODE and settings.SECRET_KEY.lower().startswith("change-me-in-production"):
-    raise RuntimeError("SECRET_KEY must be set to a strong value when DEMO_MODE=false")
+
+settings = Settings()

@@ -164,6 +164,13 @@ timeout mid-trace), and enforces business rules that span more than one
 engine (e.g., "a case must have at least one completed trace before a
 report can be generated").
 
+The implementation uses one current persisted investigation snapshot per
+case: repeated requests reuse the stored result, while a failed persistence
+transaction remains retryable after rollback. Production database locking
+and a process-local demo lock serialize competing runs. Case authorization
+receives the active user resolved at the API boundary instead of resolving
+that identity again inside the case check.
+
 ## 12. Investigation engines (domain core)
 
 Each engine below is conceptual — see PROJECT_BRAIN.md for the "why" behind
@@ -334,7 +341,9 @@ authorization checks, not just UI hiding.
 - **RBAC:** role-based checks at the API layer, not just frontend.
 - **Secrets:** blockchain-provider API keys, LLM API keys, DB credentials
   managed outside source control; conceptually a secrets manager or
-  environment-based injection, not hardcoding.
+  environment-based injection, not hardcoding. Production startup rejects a
+  missing or weak `SECRET_KEY`; local demo mode uses an ephemeral process key
+  only when no key is configured.
 - **API security:** input validation on all external inputs (wallet address
   format, numeric parameters), output encoding where relevant.
 - **Input validation:** wallet address strings are attacker-influenced input
