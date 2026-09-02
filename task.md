@@ -56,6 +56,7 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Installable Android application | NOT STARTED | No Android package exists yet. |
 | Hosted HTTPS backend | NOT STARTED | Local FastAPI is verified; no hosted deployment has been performed. |
 | Production PostgreSQL runtime | BLOCKED | Configuration and Docker Compose exist; runtime verification remains environment-blocked. |
+| Production API endpoint configuration | PARTIAL | Production frontend requests now fail closed unless `NEXT_PUBLIC_API_URL` is explicitly set; hosted HTTPS endpoint is not yet provisioned. |
 
 ## Frontend architecture preparation - 2026-09-03
 

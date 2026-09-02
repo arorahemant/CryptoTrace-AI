@@ -4,7 +4,13 @@
  * All API keys and secrets stay on the backend.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const configuredApiBase = process.env.NEXT_PUBLIC_API_URL?.trim();
+// Localhost is useful only for `next dev`. A production build must receive an
+// explicit hosted HTTPS endpoint so an installed phone app never targets the
+// phone itself by accident.
+const API_BASE = configuredApiBase || (
+  process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : ''
+);
 
 interface ApiOptions {
   method?: string;
@@ -39,6 +45,10 @@ class ApiClient {
 
   private async request(endpoint: string, options: ApiOptions = {}) {
     const { method = 'GET', body, headers = {} } = options;
+
+    if (!API_BASE) {
+      throw new Error('API endpoint is not configured. Set NEXT_PUBLIC_API_URL before starting the production app.');
+    }
 
     const token = this.getToken();
     const requestHeaders: Record<string, string> = {
