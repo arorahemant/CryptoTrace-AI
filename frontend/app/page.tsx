@@ -142,7 +142,7 @@ export default function LoginPage() {
         {/* Footer */}
         <div className="text-center mt-6">
           <p className="text-slate-600 text-xs">
-            Ministry of Home Affairs • Blockchain & Cybersecurity
+            SIH26183 • Blockchain & Cybersecurity
           </p>
         </div>
       </div>

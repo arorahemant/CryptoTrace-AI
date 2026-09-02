@@ -543,8 +543,9 @@ function InvestigateContent() {
     try {
       const data = await api.askAI(caseId, q);
       setAiMessages(prev => [...prev, { role: 'assistant', content: data.answer }]);
-    } catch {
-      setAiMessages(prev => [...prev, { role: 'assistant', content: 'Failed to get response. Please try again.' }]);
+    } catch (err) {
+      console.error('AI Copilot request failed', err);
+      setAiMessages(prev => [...prev, { role: 'assistant', content: 'AI Copilot is unavailable right now. Review the case evidence and try again.' }]);
     } finally {
       setAiLoading(false);
     }
@@ -1144,7 +1145,7 @@ function InvestigateContent() {
                             key={hash}
                             type="button"
                             onClick={() => selectTransactionByHash(hash)}
-                            className="rounded border border-[#2a3548] px-2 py-1 font-mono text-[10px] text-blue-400 hover:border-blue-500/40 hover:text-blue-300"
+                            className="min-h-10 rounded border border-[#2a3548] px-2 py-1 font-mono text-[10px] text-blue-400 hover:border-blue-500/40 hover:text-blue-300"
                           >
                             TX {hash.slice(0, 12)}…
                           </button>
@@ -1232,10 +1233,19 @@ function InvestigateContent() {
           {/* Timeline Tab */}
           {activeTab === 'timeline' && (
             <div className="p-4 animate-fade-in">
-              <h3 className="text-sm font-bold text-white mb-3">Investigation Timeline</h3>
-              <div className="space-y-0">
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white">Investigation Timeline</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Chronological events from the current case</p>
+                </div>
+                <span className="text-[9px] uppercase tracking-wide text-slate-500">{timeline.length} events</span>
+              </div>
+              {timeline.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-[#2a3548] px-3 py-4 text-xs text-slate-500">No timeline events are available yet. Run the investigation first.</p>
+              ) : (
+                <div className="space-y-0">
                 {timeline.map((e, i) => (
-                  <button key={i} onClick={() => jumpToReplayEvent(e)} className={`w-full text-left flex gap-3 group rounded-lg ${replayEvents[replayStep]?.transaction_hash && replayEvents[replayStep]?.transaction_hash === e.transaction_hash ? 'bg-blue-500/5' : ''}`}>
+                  <button type="button" key={i} onClick={() => jumpToReplayEvent(e)} className={`min-h-10 w-full text-left flex gap-3 group rounded-lg ${replayEvents[replayStep]?.transaction_hash && replayEvents[replayStep]?.transaction_hash === e.transaction_hash ? 'bg-blue-500/5' : ''}`}>
                     <div className="flex flex-col items-center">
                       <div className="w-2.5 h-2.5 rounded-full bg-blue-500 border-2 border-[#111827] z-10" />
                       {i < timeline.length - 1 && <div className="w-0.5 flex-1 bg-[#1e293b]" />}
@@ -1249,7 +1259,8 @@ function InvestigateContent() {
                     </div>
                   </button>
                 ))}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1392,18 +1403,39 @@ function InvestigateContent() {
                   <span className="text-[9px] px-1.5 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-400">AI SUMMARY</span>
                 </div>
                 {caseData?.is_demo && <p className="mt-2 text-[10px] text-amber-400">DEMO DATA context · verify conclusions against the evidence trail.</p>}
+                <div className="mt-3 grid grid-cols-3 gap-2" aria-label="Copilot grounding context">
+                  <div className="rounded border border-[#1e293b] bg-[#0a0e17] p-2">
+                    <div className="text-sm font-semibold text-white">{transactions.length}</div>
+                    <div className="text-[9px] uppercase tracking-wide text-slate-500">Transfers</div>
+                  </div>
+                  <div className="rounded border border-[#1e293b] bg-[#0a0e17] p-2">
+                    <div className="text-sm font-semibold text-white">{findings.length}</div>
+                    <div className="text-[9px] uppercase tracking-wide text-slate-500">Findings</div>
+                  </div>
+                  <div className="rounded border border-[#1e293b] bg-[#0a0e17] p-2">
+                    <div className="text-sm font-semibold text-white">{evidence.length}</div>
+                    <div className="text-[9px] uppercase tracking-wide text-slate-500">Evidence</div>
+                  </div>
+                </div>
               </div>
 
               {/* Suggested Questions */}
-              {aiMessages.length === 0 && (
+              {!hasInvestigation ? (
+                <div className="m-4 rounded-lg border border-dashed border-[#2a3548] px-3 py-4 text-xs text-slate-500">
+                  Run the investigation first so Copilot can use this case&apos;s trace, findings, and evidence.
+                </div>
+              ) : aiMessages.length === 0 && (
                 <div className="p-4 space-y-2">
                   {[
                     'Where did the money go?',
+                    'Why was this wallet flagged?',
+                    'What evidence supports this?',
                     'What suspicious patterns were detected?',
                     'Which wallets are intermediaries?',
+                    'What is the likely VASP?',
                     'Summarize the investigation.',
                   ].map((q) => (
-                    <button key={q} onClick={() => askAI(q)}
+                    <button type="button" key={q} onClick={() => askAI(q)}
                       className="w-full min-h-10 text-left px-3 py-2 bg-[#0a0e17] border border-[#1e293b] rounded-lg text-xs text-slate-400 hover:text-white hover:border-blue-500/30 transition-colors">
                       {q}
                     </button>
@@ -1441,11 +1473,13 @@ function InvestigateContent() {
                     onChange={(e) => setAiInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && askAI()}
                     aria-label="Ask the investigation copilot"
+                    disabled={!hasInvestigation || aiLoading}
+                    maxLength={1000}
                     placeholder="Ask about the investigation..."
                     className="flex-1 px-3 py-2 bg-[#0a0e17] border border-[#2a3548] rounded-lg text-xs text-white
-                      focus:outline-none focus:border-blue-500 placeholder:text-slate-600"
+                      focus:outline-none focus:border-blue-500 placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                   />
-                  <button type="button" onClick={() => askAI()} aria-label="Send question to investigation copilot" className="min-h-10 min-w-10 flex items-center justify-center p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500">
+                  <button type="button" onClick={() => askAI()} disabled={!hasInvestigation || aiLoading} aria-label="Send question to investigation copilot" className="min-h-10 min-w-10 flex items-center justify-center p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
                     <Send className="w-3 h-3" />
                   </button>
                 </div>
@@ -1467,17 +1501,28 @@ function InvestigateContent() {
                 <div className="text-center py-8">
                   <FileText className="w-10 h-10 text-slate-600 mx-auto mb-3" />
                   <p className="text-xs text-slate-500 mb-1">No report generated yet</p>
-                  <p className="text-[10px] text-slate-600 mb-4">Generate a report after reviewing the case evidence.</p>
-                  <button onClick={generateReport} disabled={generatingReport}
-                    className="px-4 py-2 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-medium hover:bg-green-600/30">
-                    {generatingReport ? 'Generating...' : 'Generate Report'}
-                  </button>
+                  <p className="text-[10px] text-slate-600 mb-4">{hasInvestigation ? 'Generate a report after reviewing the case evidence.' : 'Run the investigation before generating a report.'}</p>
+                  {hasInvestigation && (
+                    <button type="button" onClick={generateReport} disabled={generatingReport}
+                      className="min-h-10 px-4 py-2 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-medium hover:bg-green-600/30 disabled:opacity-50">
+                      {generatingReport ? 'Generating...' : 'Generate Report'}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="text-xs text-slate-400 mb-2">{report.title}</div>
+                  <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[9px] uppercase tracking-widest text-slate-500">Forensic report · {caseData?.case_number}</div>
+                        <div className="mt-1 text-sm font-semibold text-white">{report.title}</div>
+                      </div>
+                      <span className="shrink-0 text-[9px] uppercase tracking-wide text-slate-500">{report.sections?.length || 0} sections</span>
+                    </div>
+                    <p className="mt-2 text-[10px] leading-relaxed text-slate-400">Structured from this investigation&apos;s facts, deterministic analysis, and labeled inferences.</p>
+                  </div>
                   {report.sections?.map((s, i: number) => (
-                    <div key={i} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-3">
+                    <section key={`${s.section_type}-${s.title}-${i}`} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-3">
                       <div className="flex items-center gap-2 mb-1.5">
                         <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium border
                           ${s.section_type === 'fact' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
@@ -1489,7 +1534,7 @@ function InvestigateContent() {
                         <span className="text-xs font-medium text-white">{s.title}</span>
                       </div>
                       <pre className="text-[11px] text-slate-400 whitespace-pre-wrap font-sans leading-relaxed">{s.content}</pre>
-                    </div>
+                    </section>
                   ))}
                 </div>
               )}

@@ -102,8 +102,8 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Findings & Risk Analysis | PARTIAL | Backend-grounded findings/risk/WHY surface now uses a Stitch-aligned priority summary, deterministic-analysis label, affected-wallet WHY actions, and clickable supporting transaction hashes; browser visual verification remains blocked |
 | Evidence Center | PARTIAL | Persisted traceability and save flow are present; the Evidence Center now exposes case-derived record counts, an explicit finding → reason → transaction chain, FACT provenance, and linked transaction context; browser visual verification remains blocked |
 | Investigation Replay | PARTIAL | ReplayBar boundary, synchronized event state, event jump selector, labeled replay region, and accessible progress semantics exist; full visual treatment and browser interaction remain unverified |
-| AI Copilot Workspace | PARTIAL | Case-grounded AI tab now labels AI Summary output and Demo context; Stitch visual treatment and browser verification remain |
-| Forensic Report | PARTIAL | Structured report generation/retrieval now identifies current-investigation output and Demo context; Stitch document treatment remains |
+| AI Copilot Workspace | PARTIAL | Case-grounded AI tab now labels AI Summary output, shows current finding/transfer/evidence grounding counts, offers core investigator prompts, and provides a pre-investigation empty/disabled state; browser visual verification remains blocked |
+| Forensic Report | PARTIAL | Structured report generation/retrieval now identifies current-investigation output and Demo context, prevents pre-investigation generation, and presents a case-scoped document header; browser visual verification remains blocked |
 | Audit Log | COMPLETE | Authorized case-scoped API and investigator UI are implemented and build/test covered |
 | Settings | PARTIAL | Authenticated read-only Settings route and Dashboard entry now show account, security posture, provenance guidance, and active theme without exposing secrets; browser verification remains unavailable |
 
@@ -113,3 +113,12 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 |---|---|---|
 | Dashboard case navigation | PARTIAL | Case rows now support keyboard activation and visible focus; actual browser/assistive-technology validation is unavailable |
 | Investigation controls | PARTIAL | Primary actions, navigation, money-trail focus, transaction selection, and replay controls have phone-sized targets and accessible labels; replay controls wrap at narrow widths; touch/browser validation is unavailable |
+
+## Review-surface hardening - 2026-09-03
+
+| Surface | Status | Evidence / limitation |
+|---|---|---|
+| AI pre-investigation state | COMPLETE | Copilot displays the grounded case context counts, exposes the core investigator prompts only after investigation data exists, and disables input before that state is available |
+| Report pre-investigation state | COMPLETE | Report generation is unavailable until an investigation exists; generated output uses a case-scoped document header and retains structured fact/analysis/inference sections |
+| Timeline empty state | COMPLETE | Timeline exposes an event count and a clear pre-investigation empty state rather than rendering a blank panel |
+| Data-honesty copy | COMPLETE | Login footer identifies the SIH problem context instead of suggesting an institutional affiliation; demo/analysis/inference labels remain explicit |
