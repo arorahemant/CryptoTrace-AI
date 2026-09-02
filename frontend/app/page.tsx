@@ -30,7 +30,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0a0e17] relative overflow-hidden">
+    <main className="ct-login-page min-h-screen flex items-center justify-center bg-[#0a0e17] relative overflow-hidden px-4 py-8 sm:px-8">
       {/* Background grid effect */}
       <div className="absolute inset-0 opacity-5">
         <div className="absolute inset-0" style={{
@@ -43,14 +43,14 @@ export default function LoginPage() {
       </div>
 
       {/* Gradient orbs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl" />
+      <div className="hidden" aria-hidden="true" />
+      <div className="hidden" aria-hidden="true" />
 
-      <div className="relative z-10 w-full max-w-md px-6">
+      <div className="relative z-10 w-full max-w-md">
         {/* Logo / Brand */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+            <div className="w-12 h-12 rounded bg-[#124343] flex items-center justify-center">
               <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -66,14 +66,15 @@ export default function LoginPage() {
         </div>
 
         {/* Login Card */}
-        <div className="bg-[#111827] border border-[#1e293b] rounded-2xl p-8 shadow-2xl shadow-black/40">
+        <div className="bg-[#111827] border border-[#1e293b] rounded p-6 sm:p-8 shadow-2xl shadow-black/40">
           <h2 className="text-lg font-semibold text-white mb-1">Investigator Login</h2>
           <p className="text-slate-500 text-sm mb-6">Enter your credentials to access the platform</p>
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-1.5">Username</label>
+              <label htmlFor="investigator-id" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Investigator ID</label>
               <input
+                id="investigator-id"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -81,13 +82,15 @@ export default function LoginPage() {
                   focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30
                   placeholder:text-slate-600 transition-colors"
                 placeholder="Enter username"
+                autoComplete="username"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-1.5">Password</label>
+              <label htmlFor="authorization-key" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Authorization Key</label>
               <input
+                id="authorization-key"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -95,12 +98,13 @@ export default function LoginPage() {
                   focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30
                   placeholder:text-slate-600 transition-colors"
                 placeholder="Enter password"
+                autoComplete="current-password"
                 required
               />
             </div>
 
             {error && (
-              <div className="px-4 py-2.5 bg-red-500/10 border border-red-500/20 rounded-lg">
+              <div role="alert" className="px-4 py-2.5 bg-red-500/10 border border-red-500/20 rounded-lg">
                 <p className="text-red-400 text-sm">{error}</p>
               </div>
             )}
@@ -108,7 +112,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-medium rounded-lg
+              className="w-full min-h-11 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-medium rounded
                 hover:from-blue-500 hover:to-cyan-500 transition-all duration-200
                 disabled:opacity-50 disabled:cursor-not-allowed
                 shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30"
@@ -142,6 +146,6 @@ export default function LoginPage() {
           </p>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
