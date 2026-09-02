@@ -91,3 +91,18 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Gate | Status | Evidence / limitation |
 |---|---|---|
 | Evidence context visibility | COMPLETE | Investigator evidence cards now render persisted source, timestamp, finding reference, and supporting transaction hash when returned by the existing evidence API |
+
+## Stitch screen progression - 2026-09-03
+
+| Screen / surface | Status | Evidence / limitation |
+|---|---|---|
+| Wallet Intake | COMPLETE | Existing dashboard case-creation flow now uses the institutional intake treatment, explicit Demo Network provenance, accessible field/dialog semantics, and existing backend validation; API behavior unchanged |
+| Transaction Trace | PARTIAL | Existing investigation transaction data and selection are functional; full Stitch table treatment remains to be migrated |
+| Flagship Investigation Overview | PARTIAL | Existing React Flow workspace, money-trail focus, timeline, findings, evidence, replay, AI, and report state remain connected; visual migration is incomplete and browser-unverified |
+| Findings & Risk Analysis | PARTIAL | Backend-grounded findings/risk/WHY surface exists; Stitch visual treatment and broader evidence affordances remain to be migrated |
+| Evidence Center | PARTIAL | Persisted traceability and save flow are present; full Stitch visual treatment remains |
+| Investigation Replay | PARTIAL | ReplayBar boundary and synchronized event state exist; full visual treatment and browser interaction remain unverified |
+| AI Copilot Workspace | PARTIAL | Case-grounded AI tab exists; Stitch visual treatment and browser verification remain |
+| Forensic Report | PARTIAL | Structured report generation/retrieval exists; Stitch document treatment remains |
+| Audit Log | COMPLETE | Authorized case-scoped API and investigator UI are implemented and build/test covered |
+| Settings | NOT STARTED | No approved functional settings surface is currently implemented; no placeholder capability added |

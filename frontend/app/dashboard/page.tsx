@@ -256,15 +256,32 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#111827] border border-[#1e293b] rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto mx-0 sm:mx-4 p-5 sm:p-6 shadow-2xl animate-fade-in">
-        <h2 className="text-lg font-bold text-white mb-1">Create New Case</h2>
-        <p className="text-slate-500 text-sm mb-6">Enter the reported wallet address to begin investigation</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wallet-intake-title"
+        aria-describedby="wallet-intake-description"
+        className="bg-[#111827] border border-[#1e293b] rounded w-full max-w-lg max-h-[90vh] overflow-y-auto mx-0 sm:mx-4 p-5 sm:p-6 shadow-2xl animate-fade-in"
+      >
+        <div className="flex items-start justify-between gap-4 mb-1">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-blue-400 font-medium mb-1">Wallet intake</div>
+            <h2 id="wallet-intake-title" className="text-lg font-bold text-white">Create New Case</h2>
+          </div>
+          {blockchain === 'demo' && (
+            <span className="shrink-0 text-[10px] px-2 py-1 bg-amber-500/10 text-amber-400 rounded border border-amber-500/20 font-medium">
+              DEMO DATA
+            </span>
+          )}
+        </div>
+        <p id="wallet-intake-description" className="text-slate-500 text-sm mb-6">Start a case from one reported wallet. Address validation and investigation scope are enforced by the backend.</p>
 
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">Case Title</label>
+            <label htmlFor="wallet-intake-title-input" className="block text-sm font-medium text-slate-400 mb-1">Case Title</label>
             <input
+              id="wallet-intake-title-input"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -275,11 +292,12 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">
+            <label htmlFor="wallet-intake-wallet-input" className="block text-sm font-medium text-slate-400 mb-1">
               Reported Wallet Address
               <span className="text-red-400 ml-1">*</span>
             </label>
             <input
+              id="wallet-intake-wallet-input"
               type="text"
               value={wallet}
               onChange={(e) => setWallet(e.target.value)}
@@ -288,13 +306,14 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
               placeholder="0x..."
               required
             />
-            <p className="text-xs text-slate-600 mt-1">Use 0xReported001 for demo investigation</p>
+            <p className="text-xs text-slate-600 mt-1">Demo Network accepts the deterministic demo wallet shown above. Other networks require a valid address for that chain.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-1">Blockchain</label>
+              <label htmlFor="wallet-intake-blockchain-input" className="block text-sm font-medium text-slate-400 mb-1">Blockchain</label>
               <select
+                id="wallet-intake-blockchain-input"
                 value={blockchain}
                 onChange={(e) => setBlockchain(e.target.value)}
                 className="w-full px-4 py-2.5 bg-[#0a0e17] border border-[#2a3548] rounded-lg text-sm text-white
@@ -309,6 +328,8 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
             <div>
               <label className="block text-sm font-medium text-slate-400 mb-1">Reported Amount (₹)</label>
               <input
+                id="wallet-intake-amount-input"
+                aria-label="Reported amount in INR"
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -319,8 +340,9 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">Description</label>
+            <label htmlFor="wallet-intake-description-input" className="block text-sm font-medium text-slate-400 mb-1">Description</label>
             <textarea
+              id="wallet-intake-description-input"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
@@ -330,18 +352,18 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
           </div>
 
           {error && (
-            <div className="px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <div role="alert" className="px-4 py-2 bg-red-500/10 border border-red-500/20 rounded">
               <p className="text-red-400 text-sm">{error}</p>
             </div>
           )}
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
-              className="flex-1 py-2.5 border border-[#2a3548] rounded-lg text-slate-400 text-sm hover:bg-[#1e293b] transition-colors">
+              className="flex-1 min-h-11 py-2.5 border border-[#2a3548] rounded text-slate-400 text-sm hover:bg-[#1e293b] transition-colors">
               Cancel
             </button>
             <button type="submit" disabled={loading}
-              className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg text-sm font-medium
+              className="flex-1 min-h-11 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded text-sm font-medium
                 disabled:opacity-50 shadow-lg shadow-blue-500/20">
               {loading ? 'Creating...' : 'Create Case'}
             </button>
