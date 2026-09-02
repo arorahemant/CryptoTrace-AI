@@ -112,4 +112,4 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Surface | Status | Evidence / limitation |
 |---|---|---|
 | Dashboard case navigation | PARTIAL | Case rows now support keyboard activation and visible focus; actual browser/assistive-technology validation is unavailable |
-| Investigation controls | PARTIAL | Primary actions, navigation, money-trail focus, transaction selection, and replay controls have phone-sized targets and accessible labels; touch/browser validation is unavailable |
+| Investigation controls | PARTIAL | Primary actions, navigation, money-trail focus, transaction selection, and replay controls have phone-sized targets and accessible labels; replay controls wrap at narrow widths; touch/browser validation is unavailable |
