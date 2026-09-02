@@ -15,6 +15,13 @@ const statusColors: Record<string, string> = {
   completed: 'bg-green-500/10 text-green-400 border-green-500/20',
 };
 
+const statIconColors: Record<string, string> = {
+  blue: 'text-blue-400',
+  amber: 'text-amber-400',
+  purple: 'text-purple-400',
+  green: 'text-green-400',
+};
+
 interface CaseRecord {
   id: string;
   case_number: string;
@@ -70,11 +77,11 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0e17]">
+    <main className="ct-dashboard-page min-h-screen bg-[#0a0e17]">
       {/* Top Bar */}
-      <header className="min-h-14 border-b border-[#1e293b] bg-[#111827]/80 backdrop-blur-sm flex items-center px-4 sm:px-6 py-2 justify-between gap-3 sticky top-0 z-50">
+      <header className="min-h-14 border-b border-[#1e293b] bg-[#111827] flex items-center px-4 sm:px-6 py-2 justify-between gap-3 sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+          <div className="w-8 h-8 rounded bg-[#124343] flex items-center justify-center">
             <Shield className="w-4 h-4 text-white" />
           </div>
           <span className="font-bold text-white text-sm tracking-tight">CryptoTrace AI</span>
@@ -84,7 +91,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-4">
           <span className="hidden sm:inline text-sm text-slate-400">{user?.full_name || 'Investigator'}</span>
-          <button onClick={handleLogout} className="p-1.5 rounded-lg hover:bg-[#1e293b] transition-colors text-slate-400 hover:text-white">
+          <button onClick={handleLogout} aria-label="Sign out" className="min-h-10 min-w-10 p-1.5 rounded hover:bg-[#1e293b] transition-colors text-slate-400 hover:text-white">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
@@ -94,7 +101,7 @@ export default function DashboardPage() {
         {/* Dashboard Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-white">Investigation Dashboard</h1>
+            <h1 className="text-2xl font-bold text-white">Case Dashboard</h1>
             <p className="text-slate-400 text-sm mt-1">Manage and investigate fraud-linked cryptocurrency cases</p>
           </div>
           <button
@@ -118,7 +125,7 @@ export default function DashboardPage() {
           ].map((stat) => (
             <div key={stat.label} className="bg-[#111827] border border-[#1e293b] rounded-xl p-4">
               <div className="flex items-center justify-between mb-2">
-                <stat.icon className={`w-5 h-5 text-${stat.color}-400`} />
+                <stat.icon className={`w-5 h-5 ${statIconColors[stat.color] || statIconColors.blue}`} />
               </div>
               <div className="text-2xl font-bold text-white">{stat.value}</div>
               <div className="text-xs text-slate-400 mt-1">{stat.label}</div>
@@ -214,7 +221,7 @@ export default function DashboardPage() {
           }}
         />
       )}
-    </div>
+    </main>
   );
 }
 
