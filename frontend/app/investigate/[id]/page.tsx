@@ -54,7 +54,7 @@ interface GraphEdgeData {
 
 interface GraphResponse { nodes: GraphNodeData[]; edges: GraphEdgeData[]; primary_path: string[]; }
 interface FindingData { pattern_name: string; description: string; severity: string; confidence: number; }
-interface EvidenceData { id: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; created_at?: string; is_bookmarked?: boolean; }
+interface EvidenceData { id: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; finding_id?: string; source?: string; created_at?: string; is_bookmarked?: boolean; }
 interface TransactionData { id?: string; hash: string; from_address: string; to_address: string; amount: number; asset: string; hop_number?: number; }
 interface TimelineEvent { id?: string; title: string; description?: string; timestamp?: string; transaction_hash?: string; sequence_order?: number; }
 interface AuditEvent { id: string; action: string; resource_type?: string | null; resource_id?: string | null; details?: Record<string, unknown> | null; actor: string; timestamp?: string | null; }
@@ -1031,6 +1031,11 @@ function InvestigateContent() {
                   <div className="text-[10px] uppercase tracking-widest text-cyan-400 font-medium mb-1">Selected evidence</div>
                   <div className="text-xs text-white font-medium">{selectedEvidence.title}</div>
                   {selectedEvidence.transaction_hash && <div className="text-[10px] text-slate-500 font-mono break-all mt-1">{selectedEvidence.transaction_hash}</div>}
+                  {selectedEvidence.finding_id && <div className="text-[10px] text-slate-400 font-mono break-all mt-1">Finding {selectedEvidence.finding_id}</div>}
+                  {selectedEvidence.reason && <div className="text-[10px] text-cyan-400 mt-1">{selectedEvidence.reason}</div>}
+                  <div className="mt-1 text-[10px] text-slate-500">
+                    Source: {selectedEvidence.source || 'unknown'}{selectedEvidence.created_at ? ` · ${new Date(selectedEvidence.created_at).toLocaleString()}` : ''}
+                  </div>
                 </div>
               )}
               {evidence.length === 0 ? (
@@ -1043,6 +1048,11 @@ function InvestigateContent() {
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed">{e.description}</p>
                   {e.reason && <p className="text-[10px] text-cyan-400 mt-1">{e.reason}</p>}
+                  {e.transaction_hash && <p className="mt-1 break-all font-mono text-[10px] text-slate-500">TX {e.transaction_hash}</p>}
+                  {e.finding_id && <p className="mt-1 break-all font-mono text-[10px] text-slate-500">Finding {e.finding_id}</p>}
+                  <div className="mt-1 text-[10px] text-slate-500">
+                    {e.source || 'unknown source'}{e.created_at ? ` · ${new Date(e.created_at).toLocaleString()}` : ''}
+                  </div>
                 </button>
               ))}
             </div>

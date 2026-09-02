@@ -75,3 +75,9 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 |---|---|---|
 | Case-scoped audit API | COMPLETE | `GET /cases/{case_id}/audit` enforces the existing owner/supervisor/admin case authorization and filters child-resource audit records by persisted case reference; IDOR regression coverage added |
 | Investigator Audit Log UI | COMPLETE | Investigation navigation renders actor, action, timestamp, resource context, and structured details from the API; IP addresses are intentionally omitted |
+
+## Evidence traceability surface - 2026-09-03
+
+| Gate | Status | Evidence / limitation |
+|---|---|---|
+| Evidence context visibility | COMPLETE | Investigator evidence cards now render persisted source, timestamp, finding reference, and supporting transaction hash when returned by the existing evidence API |

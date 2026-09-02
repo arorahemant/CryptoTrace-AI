@@ -8,4 +8,6 @@ The Next.js workspace presents case scope/risk at the top, navigation and filter
 
 The investigation navigation also exposes an authorized Audit Log view backed by `GET /cases/{case_id}/audit`. It is case-scoped, shows actor/action/resource/timestamp context, and deliberately omits stored IP addresses from the investigator UI.
 
+Evidence cards expose the persisted source, timestamp, finding reference, and supporting transaction hash when available, keeping the investigator-visible chain `finding → evidence → transaction` explicit.
+
 The shared API client keeps localhost as a development-only fallback. A production or installed-app build requires an explicit `NEXT_PUBLIC_API_URL`, preventing a phone from silently calling itself when the hosted HTTPS backend has not been configured.
