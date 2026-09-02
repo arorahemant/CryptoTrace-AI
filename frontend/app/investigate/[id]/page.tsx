@@ -53,9 +53,29 @@ interface GraphEdgeData {
 }
 
 interface GraphResponse { nodes: GraphNodeData[]; edges: GraphEdgeData[]; primary_path: string[]; }
-interface FindingData { pattern_name: string; description: string; severity: string; confidence: number; }
+interface FindingData {
+  id?: string;
+  pattern_name: string;
+  description: string;
+  severity: string;
+  confidence: number;
+  supporting_transaction_ids?: string[];
+  created_at?: string;
+}
 interface EvidenceData { id: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; finding_id?: string; source?: string; created_at?: string; is_bookmarked?: boolean; }
-interface TransactionData { id?: string; hash: string; from_address: string; to_address: string; amount: number; asset: string; hop_number?: number; }
+interface TransactionData {
+  id?: string;
+  hash: string;
+  from_address: string;
+  to_address: string;
+  amount: number;
+  asset: string;
+  timestamp?: string | null;
+  source?: string | null;
+  status?: string | null;
+  is_suspicious?: boolean;
+  hop_number?: number;
+}
 interface TimelineEvent { id?: string; title: string; description?: string; timestamp?: string; transaction_hash?: string; sequence_order?: number; }
 interface AuditEvent { id: string; action: string; resource_type?: string | null; resource_id?: string | null; details?: Record<string, unknown> | null; actor: string; timestamp?: string | null; }
 interface ReplayEvent {
@@ -94,11 +114,11 @@ interface InvestigationData {
 
 // ─── Node Colors ──────────────────────────────────────────────
 function getNodeColor(node: GraphNodeData): string {
-  if (node.is_reported) return '#ef4444';
-  if (node.is_destination) return '#8b5cf6';
-  if (node.is_suspicious) return '#f59e0b';
-  if (node.is_intermediary) return '#06b6d4';
-  return '#3b82f6';
+  if (node.is_reported) return '#ba1a1a';
+  if (node.is_destination) return '#58331f';
+  if (node.is_suspicious) return '#734934';
+  if (node.is_intermediary) return '#396666';
+  return '#526168';
 }
 
 function getRiskBadge(category: string | null): { bg: string; text: string } {
@@ -344,10 +364,10 @@ function InvestigateContent() {
         style: {
           background: `${color}20`,
           border: `2px solid ${color}`,
-          borderRadius: '12px',
-          padding: '12px 16px',
-          minWidth: '140px',
-          boxShadow: onPrimary ? `0 0 20px ${color}40` : 'none',
+          borderRadius: '4px',
+          padding: '10px 14px',
+          minWidth: '150px',
+          boxShadow: onPrimary ? '0 2px 4px rgba(26, 28, 25, 0.12)' : 'none',
         },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
@@ -362,14 +382,14 @@ function InvestigateContent() {
         target: e.target,
         data: e,
         label: `${e.amount?.toFixed(3)} ${e.asset || 'ETH'}`,
-        labelStyle: { fill: '#94a3b8', fontSize: 10, fontFamily: 'monospace' },
-        labelBgStyle: { fill: '#111827', fillOpacity: 0.9 },
+        labelStyle: { fill: '#526168', fontSize: 10, fontFamily: 'monospace' },
+        labelBgStyle: { fill: '#fafaf5', fillOpacity: 0.95 },
         style: {
-          stroke: onPrimary ? '#3b82f6' : '#2a3548',
+          stroke: onPrimary ? '#124343' : '#c0c8c7',
           strokeWidth: onPrimary ? 2.5 : 1.5,
         },
         animated: onPrimary,
-        markerEnd: { type: MarkerType.ArrowClosed, color: onPrimary ? '#3b82f6' : '#2a3548' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: onPrimary ? '#124343' : '#c0c8c7' },
       };
     });
 
@@ -461,9 +481,9 @@ function InvestigateContent() {
       style: {
         ...baseNodeStyles.current[n.id],
         opacity: showMoneyTrail && !primaryPath.has(n.id) ? 0.45 : 1,
-        border: highlightNodes.has(n.id) ? '2px solid #3b82f6' : baseNodeStyles.current[n.id]?.border,
+        border: highlightNodes.has(n.id) ? '2px solid #124343' : baseNodeStyles.current[n.id]?.border,
         boxShadow: highlightNodes.has(n.id)
-          ? '0 0 24px rgba(59,130,246,0.8)'
+          ? '0 2px 6px rgba(18, 67, 67, 0.28)'
           : baseNodeStyles.current[n.id]?.boxShadow,
       },
     })));
@@ -481,10 +501,10 @@ function InvestigateContent() {
         style: {
           ...baseEdgeStyles.current[edge.id],
           stroke: isCurrent
-            ? '#3b82f6'
+            ? '#124343'
             : showMoneyTrail
-              ? (onPrimary ? '#22d3ee' : '#334155')
-              : (onPrimary ? '#3b82f6' : '#2a3548'),
+              ? (onPrimary ? '#396666' : '#c0c8c7')
+              : (onPrimary ? '#124343' : '#c0c8c7'),
           strokeWidth: isCurrent ? 3.5 : (showMoneyTrail && onPrimary ? 3 : (onPrimary ? 2.5 : 1.5)),
         },
       };
@@ -583,6 +603,16 @@ function InvestigateContent() {
       setSelectedTransaction(transaction);
       setActiveTab('transactions');
     }
+  };
+
+  const selectTransactionByHash = (hash: string) => {
+    const transaction = transactions.find(item => item.hash === hash);
+    if (!transaction) {
+      setActionError('The supporting transaction is not available in this case.');
+      return;
+    }
+    setSelectedTransaction(transaction);
+    setActiveTab('transactions');
   };
 
   const searchGraph = () => {
@@ -794,6 +824,10 @@ function InvestigateContent() {
             </div>
           ) : (
             <div className="flex-1 relative" style={{ height: '100%' }}>
+              <div className="absolute top-3 right-3 z-10 hidden sm:block rounded border border-[#2a3548] bg-[#111827]/95 px-3 py-2 shadow-xl">
+                <div className="text-[10px] uppercase tracking-widest text-slate-500 font-medium">Transaction flow topology</div>
+                <div className="mt-1 text-[10px] text-slate-400 font-mono">{nodes.length} wallets · {edges.length} transfers</div>
+              </div>
               <form
                 onSubmit={(event) => { event.preventDefault(); searchGraph(); }}
                 className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded-lg border border-[#2a3548] bg-[#111827]/95 p-1 shadow-xl"
@@ -834,12 +868,12 @@ function InvestigateContent() {
                 maxZoom={2}
                 attributionPosition="bottom-left"
               >
-                <Background color="#1e293b" gap={40} size={1} />
+                <Background color="#dfe4e2" gap={40} size={1} />
                 <Controls position="bottom-right" />
                 <MiniMap
                   position="bottom-left"
                   nodeColor={(n) => getNodeColor(n.data)}
-                  maskColor="#0a0e1780"
+                  maskColor="#fafaf5cc"
                 />
               </ReactFlow>
             </div>
@@ -854,6 +888,7 @@ function InvestigateContent() {
               onStepBackward={() => moveReplayStep(-1)}
               onTogglePlaying={() => setReplaying((current) => !current)}
               onStepForward={() => moveReplayStep(1)}
+              onJumpToStep={(step) => { setReplayStep(step); setReplaying(false); }}
             />
           )}
         </div>
@@ -1000,7 +1035,15 @@ function InvestigateContent() {
           {/* Findings Tab */}
           {activeTab === 'findings' && (
             <div className="p-4 space-y-3 animate-fade-in">
-              <h3 className="text-sm font-bold text-white">Suspicious Patterns</h3>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white">Findings &amp; Risk Analysis</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Deterministic analysis from this investigation</p>
+                </div>
+                <span className={`text-[10px] px-2 py-1 rounded border font-medium ${riskBadge.bg} ${riskBadge.text}`}>
+                  {(investigation?.risk?.overall || caseData?.summary?.risk_level || 'PENDING').toUpperCase()} PRIORITY
+                </span>
+              </div>
               {findings.length === 0 ? (
                 <p className="text-xs text-slate-500">No findings yet. Run investigation first.</p>
               ) : findings.map((f, i) => (
@@ -1014,9 +1057,27 @@ function InvestigateContent() {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed">{f.description}</p>
-                  <div className="text-[10px] text-slate-600 mt-1.5">
-                    Confidence: {(f.confidence * 100).toFixed(0)}%
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
+                    <span className="px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">DETERMINISTIC ANALYSIS</span>
+                    <span className="text-slate-600">Confidence: {(f.confidence * 100).toFixed(0)}%</span>
                   </div>
+                  {(f.supporting_transaction_ids ?? []).length > 0 && (
+                    <div className="mt-2 border-t border-[#1e293b] pt-2">
+                      <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Supporting transactions</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(f.supporting_transaction_ids ?? []).slice(0, 4).map((hash) => (
+                          <button
+                            key={hash}
+                            type="button"
+                            onClick={() => selectTransactionByHash(hash)}
+                            className="rounded border border-[#2a3548] px-2 py-1 font-mono text-[10px] text-blue-400 hover:border-blue-500/40 hover:text-blue-300"
+                          >
+                            TX {hash.slice(0, 12)}…
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1128,7 +1189,23 @@ function InvestigateContent() {
               <h3 className="text-sm font-bold text-white mb-3">Transactions</h3>
               <div className="space-y-2">
                 {transactions.map((t, i) => (
-                  <div key={i} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-2.5">
+                  <div
+                    key={t.id || t.hash || i}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={selectedTransaction?.hash === t.hash}
+                    aria-label={`Select transaction ${t.hash}`}
+                    onClick={() => { setSelectedTransaction(t); setActiveTab('transactions'); }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedTransaction(t);
+                        setActiveTab('transactions');
+                      }
+                    }}
+                    className={`bg-[#0a0e17] border rounded-lg p-2.5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500
+                      ${selectedTransaction?.hash === t.hash ? 'border-blue-500/50' : 'border-[#1e293b] hover:border-blue-500/30'}`}
+                  >
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[10px] font-mono text-blue-400">{t.hash?.slice(0, 20)}...</span>
                       <span className="text-[10px] text-slate-500">Hop {t.hop_number}</span>
@@ -1137,8 +1214,12 @@ function InvestigateContent() {
                       {t.from_address?.slice(0, 12)}... → {t.to_address?.slice(0, 12)}...
                     </div>
                     <div className="text-xs text-white font-mono mt-0.5">{t.amount?.toFixed(4)} {t.asset}</div>
+                    <div className="mt-1 text-[10px] text-slate-500">
+                      {t.timestamp ? new Date(t.timestamp).toLocaleString() : 'Timestamp unavailable'}
+                      {t.source ? ` · ${t.source}` : ''}
+                    </div>
                     <button
-                      onClick={() => saveTransactionEvidence(t)}
+                      onClick={(event) => { event.stopPropagation(); void saveTransactionEvidence(t); }}
                       disabled={savingEvidence}
                       className="mt-2 inline-flex items-center gap-1.5 text-[10px] text-blue-400 hover:text-blue-300 disabled:opacity-50"
                     >
