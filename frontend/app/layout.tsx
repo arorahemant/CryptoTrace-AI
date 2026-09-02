@@ -10,6 +10,10 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "CryptoTrace AI — Blockchain Fraud Investigation Platform",
   description: "Real-Time Identification of Fraud-Linked Cryptocurrency Exchanges from Victim-Reported Suspect Wallet Addresses through Automated Blockchain Analytics",
+  icons: {
+    icon: "/cryptotrace-icon.svg",
+    apple: "/cryptotrace-icon.svg",
+  },
 };
 
 export const viewport: Viewport = {

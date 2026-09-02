@@ -312,4 +312,11 @@ html, body {
     flex: 1 1 8rem;
     min-width: 8rem;
   }
+
+  /* React Flow's default controls are compact desktop affordances. Keep the
+   * same graph behavior while giving touch users comfortable targets. */
+  .react-flow__controls-button {
+    width: 40px;
+    height: 40px;
+  }
 }

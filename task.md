@@ -29,7 +29,7 @@
 | PostgreSQL Verification | BLOCKED | PostgreSQL configuration and Docker Compose are present, but Docker/runtime connection was unavailable for this pass |
 | Live Blockchain Provider | NOT STARTED | DemoProvider is the exercised source; no live provider credentials or network calls were used |
 
-Current validation: clean backend environment installed 86 declared packages with bcrypt 4.0.1; backend regression is 30 passed and explicit P0 validation is 90/90. The Pydantic class-based-config warning is removed, and no bcrypt warning appeared during clean-environment startup/authentication. P0 remediation tests cover secret enforcement, JWT validation, idempotent/retry-safe investigation execution, and single-request user resolution. Frontend TypeScript, lint, and production build pass; lint reports 0 errors and 0 warnings. Local runtime verification used the SQLite fallback. The legacy project venv reference remains broken and points to a deleted uv Python executable, but an ignored clean backend/.venv is now available for repeatable validation. PostgreSQL runtime, browser walkthrough, and live-provider behavior remain unverified.
+Current validation: clean backend environment installed 86 declared packages with bcrypt 4.0.1; backend regression is 32 passed and explicit P0 validation is 90/90. The Pydantic class-based-config warning is removed, and no bcrypt warning appeared during clean-environment startup/authentication. P0 remediation tests cover secret enforcement, JWT validation, idempotent/retry-safe investigation execution, and single-request user resolution. Frontend TypeScript, lint, and production build pass; lint reports 0 errors and 0 warnings. Local runtime verification used the SQLite fallback. The legacy project venv reference remains broken and points to a deleted uv Python executable, but an ignored clean backend/.venv is now available for repeatable validation. PostgreSQL runtime, browser walkthrough, and live-provider behavior remain unverified.
 
 ## P1 triage after P0 remediation - 2026-09-03
 
@@ -113,6 +113,17 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 |---|---|---|
 | Dashboard case navigation | PARTIAL | Case rows now support keyboard activation and visible focus; actual browser/assistive-technology validation is unavailable |
 | Investigation controls | PARTIAL | Primary actions, navigation, money-trail focus, transaction selection, and replay controls have phone-sized targets and accessible labels; replay controls wrap at narrow widths; touch/browser validation is unavailable |
+
+## Android packaging readiness audit - 2026-09-03
+
+| Gate | Status | Evidence / limitation |
+|---|---|---|
+| Android shell strategy | COMPLETE | Capacitor is the least-risk intended wrapper because the existing Next.js frontend remains the functional source; no native project is claimed yet |
+| Frontend consumption model | PARTIAL | The app uses a dynamic Next.js route and is not configured for static export; packaging therefore requires a hosted HTTPS frontend origin or a separately verified static-export decision |
+| Production API origin | PARTIAL | `NEXT_PUBLIC_API_URL` is explicit and production-fail-closed; no hosted HTTPS API endpoint is configured |
+| Mobile web readiness | PARTIAL | Responsive layouts, touch-sized primary controls, responsive replay controls, modal overflow handling, and larger mobile ReactFlow controls are code/build verified; no real device validation |
+| Android build toolchain | BLOCKED | Java 17 is available, but Capacitor packages, Android SDK, Gradle, ADB, and emulator/device are unavailable |
+| Hosted frontend/API and CORS origin | BLOCKED | No hosted frontend/API URL or deployment credentials are available; production CORS must explicitly allow the eventual HTTPS frontend/native origin |
 
 ## Review-surface hardening - 2026-09-03
 

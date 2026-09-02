@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">CryptoTrace AI</title>
+  <desc id="desc">Institutional teal square with a connected investigation path</desc>
+  <rect width="512" height="512" rx="112" fill="#124343"/>
+  <path d="M132 154h248M132 256h146M132 358h248" stroke="#F5F1E8" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="132" cy="154" r="34" fill="#D6A64F"/>
+  <circle cx="278" cy="256" r="34" fill="#F5F1E8"/>
+  <circle cx="380" cy="358" r="34" fill="#D6A64F"/>
+</svg>
