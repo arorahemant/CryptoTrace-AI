@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import {
   Search, Plus, Shield, Clock, CheckCircle,
-  ChevronRight, Loader2, LogOut
+  ChevronRight, Loader2, LogOut, Settings as SettingsIcon
 } from 'lucide-react';
 
 const statusColors: Record<string, string> = {
@@ -91,6 +91,9 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-4">
           <span className="hidden sm:inline text-sm text-slate-400">{user?.full_name || 'Investigator'}</span>
+          <button onClick={() => router.push('/settings')} aria-label="Open settings" className="min-h-10 min-w-10 p-1.5 rounded hover:bg-[#1e293b] transition-colors text-slate-400 hover:text-white">
+            <SettingsIcon className="w-4 h-4" />
+          </button>
           <button onClick={handleLogout} aria-label="Sign out" className="min-h-10 min-w-10 p-1.5 rounded hover:bg-[#1e293b] transition-colors text-slate-400 hover:text-white">
             <LogOut className="w-4 h-4" />
           </button>

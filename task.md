@@ -105,4 +105,4 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | AI Copilot Workspace | PARTIAL | Case-grounded AI tab now labels AI Summary output and Demo context; Stitch visual treatment and browser verification remain |
 | Forensic Report | PARTIAL | Structured report generation/retrieval now identifies current-investigation output and Demo context; Stitch document treatment remains |
 | Audit Log | COMPLETE | Authorized case-scoped API and investigator UI are implemented and build/test covered |
-| Settings | NOT STARTED | No approved functional settings surface is currently implemented; no placeholder capability added |
+| Settings | PARTIAL | Authenticated read-only Settings route and Dashboard entry now show account, security posture, provenance guidance, and active theme without exposing secrets; browser verification remains unavailable |

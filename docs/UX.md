@@ -15,3 +15,5 @@ The Evidence Center marks persisted evidence as `FACT` and selecting an item hyd
 The shared API client keeps localhost as a development-only fallback. A production or installed-app build requires an explicit `NEXT_PUBLIC_API_URL`, preventing a phone from silently calling itself when the hosted HTTPS backend has not been configured.
 
 The dashboard's New Case flow is the Wallet Intake surface. It uses the same case-creation API and backend wallet/chain validation as before, while presenting a compact institutional intake dialog with explicit `DEMO DATA` provenance for the deterministic Demo Network and touch-sized form actions. This does not claim live address existence checks for non-demo networks.
+
+Settings is a read-only, authenticated account and environment surface reached from the Dashboard header. It deliberately avoids exposing tokens, provider credentials, or editable security settings; it shows the locally stored investigator profile, the application’s case-scoped security posture, provenance guidance, and the active institutional theme. Its redirect and logout behavior are code/build verified; browser verification remains unavailable.
