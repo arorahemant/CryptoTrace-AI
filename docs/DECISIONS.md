@@ -8,3 +8,4 @@
 - Require an injected random `SECRET_KEY` (minimum 32 characters) when `DEMO_MODE=false`; generate an ephemeral process key only for local/demo startup when no key is configured.
 - Treat investigation execution as an idempotent current snapshot per case. Repeated requests reuse persisted data; failed persistence is rolled back for retry rather than being hidden with an `IntegrityError` catch.
 - Resolve the active user once through the case-route dependency and pass that identity through authorization checks.
+- Record the current founder delivery decision as app-first: target an installable Android experience plus desktop support, a hosted HTTPS backend, production PostgreSQL, secure production configuration, and the complete phone investigation workflow without USB; this is scope, not a claim of current delivery.

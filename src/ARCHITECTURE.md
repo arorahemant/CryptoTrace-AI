@@ -146,6 +146,13 @@ report preview/export. Frontend must not contain domain logic (e.g., pattern
 rules or risk scoring must not be computed client-side) — it consumes
 results from the API. **[PROPOSED]**
 
+The current founder delivery decision makes this functional frontend the
+shared source for both the desktop investigator experience and an intentional
+mobile/Android app experience. App packaging and hosted delivery are delivery
+gates, not current runtime claims. Both clients must preserve the same API
+contracts, case authorization, investigation state, and data-provenance
+labels; mobile is not a second implementation of the domain logic.
+
 ## 10. API boundary
 
 API is the sole entry point between frontend and application/service layer.

@@ -357,6 +357,26 @@ document" — most of what's above (replay, multi-chain, AI copilot,
 cross-case intelligence) is P1/P2/FUTURE unless stated otherwise in
 REQUIREMENTS.md.
 
+## 21A. Current founder delivery decision — app-first scope evolution
+
+The foundation-stage MVP definition above remains the first verified vertical
+slice. The current founder/CTO decision expands the delivery target beyond a
+local browser prototype: **CryptoTrace AI is APP-FIRST and requires an
+installable Android experience.**
+
+Required target capabilities are a professional desktop investigator
+experience, an intentional mobile investigator experience, an installable
+Android application, a hosted HTTPS backend, production PostgreSQL, secure
+production configuration, and the complete core investigation workflow on a
+phone without USB or localhost dependency.
+
+This section records scope, not completion. Hosted deployment, PostgreSQL
+runtime verification, Android packaging, and mobile validation remain
+separate delivery gates until actually demonstrated. The existing frontend,
+API contracts, investigation state, and deterministic Demo Mode remain the
+functional source for both desktop and mobile experiences; the app must not
+become a disconnected second product.
+
 ## 22. Future vision
 
 **[FUTURE, not committed]:** multiple blockchains and cross-chain fund-flow

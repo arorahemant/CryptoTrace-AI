@@ -182,3 +182,29 @@ split and PROJECT_BRAIN.md §21 for MVP philosophy.
 | `PROJECT_BRAIN.md` | Founder/product/strategic reasoning — the "why" |
 | `ARCHITECTURE.md` | Technical blueprint — the "how," conceptually, no code |
 | `REQUIREMENTS.md` | Formal requirement list with traceability and priority |
+
+## 15. Current founder delivery decision — app-first scope evolution
+
+The original foundation documents intentionally kept the MVP narrow and
+treated mobile delivery as unresolved. The current founder/CTO decision
+extends the delivery target: **CryptoTrace AI is APP-FIRST and requires an
+installable Android experience.**
+
+The required delivery target is:
+
+```
+PHONE OR DESKTOP APP → HOSTED HTTPS API → PRODUCTION POSTGRESQL
+                    → DATA / BLOCKCHAIN / AI PROVIDERS
+```
+
+The target includes a professional desktop investigator experience, an
+intentional mobile investigator experience, an installable Android app, a
+hosted backend, production PostgreSQL, secure production configuration, and
+the complete core investigation workflow without USB or localhost dependency.
+This is a current scope decision, **not a claim that hosting, PostgreSQL
+runtime, Android packaging, or mobile validation are already complete**.
+
+The narrow one-chain P0 remains the foundation for this delivery. Mobile and
+hosted work must reuse the existing functional contracts and preserve the
+same investigator state; they must not become a second product or weaken the
+data-honesty and evidence rules above.

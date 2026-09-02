@@ -46,3 +46,13 @@ Current validation: clean backend environment installed 86 declared packages wit
 | Provider selection / live provider | NOT STARTED | The exercised service intentionally uses the labelled DemoProvider; no live credentials or network provider is configured. Do not represent this as live blockchain support. |
 
 No P1 item above justified a code change in this pass. The P0 gate remains green and the private checkpoint is pushed at 83553247b2ec669e1468e686cd22626db00caa12.
+
+## App-first delivery governance - 2026-09-03
+
+| Gate | Status | Evidence / limitation |
+|---|---|---|
+| App-first founder decision | COMPLETE | Recorded in the governing context, project brain, architecture notes, and decision log; this supersedes the earlier unresolved mobile wording without claiming delivery. |
+| Shared desktop/mobile functional source | PARTIAL | Existing frontend/API/state remain the source to reuse; mobile-specific architecture and validation are not yet implemented. |
+| Installable Android application | NOT STARTED | No Android package exists yet. |
+| Hosted HTTPS backend | NOT STARTED | Local FastAPI is verified; no hosted deployment has been performed. |
+| Production PostgreSQL runtime | BLOCKED | Configuration and Docker Compose exist; runtime verification remains environment-blocked. |
