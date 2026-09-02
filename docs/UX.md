@@ -10,6 +10,8 @@ The investigation navigation also exposes an authorized Audit Log view backed by
 
 Evidence cards expose the persisted source, timestamp, finding reference, and supporting transaction hash when available, keeping the investigator-visible chain `finding → evidence → transaction` explicit.
 
+The Evidence Center marks persisted evidence as `FACT` and selecting an item hydrates its linked transaction when that transaction is present in the same case. The AI Copilot is labeled `AI SUMMARY`, carries the current case context, and reminds investigators to verify conclusions against the evidence trail. Reports are labeled as structured output from the current investigation and preserve the existing fact/analysis/inference section types.
+
 The shared API client keeps localhost as a development-only fallback. A production or installed-app build requires an explicit `NEXT_PUBLIC_API_URL`, preventing a phone from silently calling itself when the hosted HTTPS backend has not been configured.
 
 The dashboard's New Case flow is the Wallet Intake surface. It uses the same case-creation API and backend wallet/chain validation as before, while presenting a compact institutional intake dialog with explicit `DEMO DATA` provenance for the deterministic Demo Network and touch-sized form actions. This does not claim live address existence checks for non-demo networks.

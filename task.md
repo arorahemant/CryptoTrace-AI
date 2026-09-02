@@ -100,9 +100,9 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Transaction Trace | PARTIAL | Existing investigation transaction data now exposes timestamp/source and direct mouse/keyboard selection; full Stitch table treatment remains to be migrated |
 | Flagship Investigation Overview | PARTIAL | Existing React Flow workspace now uses restrained institutional graph styling with backend-driven topology counts; money-trail focus, timeline, findings, evidence, replay, AI, and report state remain connected; browser verification is unavailable |
 | Findings & Risk Analysis | PARTIAL | Backend-grounded findings/risk/WHY surface now labels deterministic analysis and exposes clickable supporting transaction hashes; full Stitch visual treatment remains |
-| Evidence Center | PARTIAL | Persisted traceability and save flow are present; full Stitch visual treatment remains |
+| Evidence Center | PARTIAL | Persisted traceability and save flow are present; evidence cards now label observed facts and hydrate the linked transaction context; full Stitch visual treatment remains |
 | Investigation Replay | PARTIAL | ReplayBar boundary, synchronized event state, and event jump selector exist; full visual treatment and browser interaction remain unverified |
-| AI Copilot Workspace | PARTIAL | Case-grounded AI tab exists; Stitch visual treatment and browser verification remain |
-| Forensic Report | PARTIAL | Structured report generation/retrieval exists; Stitch document treatment remains |
+| AI Copilot Workspace | PARTIAL | Case-grounded AI tab now labels AI Summary output and Demo context; Stitch visual treatment and browser verification remain |
+| Forensic Report | PARTIAL | Structured report generation/retrieval now identifies current-investigation output and Demo context; Stitch document treatment remains |
 | Audit Log | COMPLETE | Authorized case-scoped API and investigator UI are implemented and build/test covered |
 | Settings | NOT STARTED | No approved functional settings surface is currently implemented; no placeholder capability added |

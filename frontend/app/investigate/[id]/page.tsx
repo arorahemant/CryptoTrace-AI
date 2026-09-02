@@ -62,7 +62,7 @@ interface FindingData {
   supporting_transaction_ids?: string[];
   created_at?: string;
 }
-interface EvidenceData { id: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; finding_id?: string; source?: string; created_at?: string; is_bookmarked?: boolean; }
+interface EvidenceData { id: string; evidence_type?: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; finding_id?: string; source?: string; created_at?: string; is_bookmarked?: boolean; }
 interface TransactionData {
   id?: string;
   hash: string;
@@ -571,6 +571,14 @@ function InvestigateContent() {
       setEvidenceMessage(err instanceof Error ? err.message : 'Unable to save evidence.');
     } finally {
       setSavingEvidence(false);
+    }
+  };
+
+  const selectEvidence = (item: EvidenceData) => {
+    setSelectedEvidence(item);
+    if (item.transaction_hash) {
+      const transaction = transactions.find(candidate => candidate.hash === item.transaction_hash);
+      if (transaction) setSelectedTransaction(transaction);
     }
   };
 
@@ -1086,13 +1094,31 @@ function InvestigateContent() {
           {/* Evidence Tab */}
           {activeTab === 'evidence' && (
             <div className="p-4 space-y-3 animate-fade-in">
-              <h3 className="text-sm font-bold text-white">Evidence</h3>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white">Evidence Center</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Observed records linked to findings and transactions</p>
+                </div>
+                <Bookmark className="w-4 h-4 text-slate-500" />
+              </div>
               {selectedEvidence && (
                 <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3">
-                  <div className="text-[10px] uppercase tracking-widest text-cyan-400 font-medium mb-1">Selected evidence</div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="text-[10px] uppercase tracking-widest text-cyan-400 font-medium">Selected evidence</div>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">FACT</span>
+                  </div>
                   <div className="text-xs text-white font-medium">{selectedEvidence.title}</div>
                   {selectedEvidence.transaction_hash && <div className="text-[10px] text-slate-500 font-mono break-all mt-1">{selectedEvidence.transaction_hash}</div>}
                   {selectedEvidence.finding_id && <div className="text-[10px] text-slate-400 font-mono break-all mt-1">Finding {selectedEvidence.finding_id}</div>}
+                  {selectedEvidence.transaction_hash && transactions.some(transaction => transaction.hash === selectedEvidence.transaction_hash) && (
+                    <button
+                      type="button"
+                      onClick={() => selectTransactionByHash(selectedEvidence.transaction_hash as string)}
+                      className="mt-2 min-h-10 rounded border border-cyan-500/30 px-3 py-1.5 text-[10px] font-medium text-cyan-400 hover:bg-cyan-500/10"
+                    >
+                      VIEW LINKED TRANSACTION
+                    </button>
+                  )}
                   {selectedEvidence.reason && <div className="text-[10px] text-cyan-400 mt-1">{selectedEvidence.reason}</div>}
                   <div className="mt-1 text-[10px] text-slate-500">
                     Source: {selectedEvidence.source || 'unknown'}{selectedEvidence.created_at ? ` · ${new Date(selectedEvidence.created_at).toLocaleString()}` : ''}
@@ -1102,10 +1128,11 @@ function InvestigateContent() {
               {evidence.length === 0 ? (
                 <p className="text-xs text-slate-500">No evidence yet. Run investigation first.</p>
               ) : evidence.map((e, i) => (
-                <button key={i} onClick={() => setSelectedEvidence(e)} className={`w-full text-left bg-[#0a0e17] border rounded-lg p-3 ${selectedEvidence?.id === e.id ? 'border-cyan-500/40' : 'border-[#1e293b]'}`}>
+                <button key={e.id || i} onClick={() => selectEvidence(e)} aria-pressed={selectedEvidence?.id === e.id} className={`w-full text-left bg-[#0a0e17] border rounded-lg p-3 ${selectedEvidence?.id === e.id ? 'border-cyan-500/40' : 'border-[#1e293b]'}`}>
                   <div className="flex items-center gap-2 mb-1">
                     <Bookmark className="w-3 h-3 text-blue-400" />
                     <span className="text-xs font-medium text-white">{e.title}</span>
+                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">FACT</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed">{e.description}</p>
                   {e.reason && <p className="text-[10px] text-cyan-400 mt-1">{e.reason}</p>}
@@ -1236,8 +1263,14 @@ function InvestigateContent() {
           {activeTab === 'ai' && (
             <div className="flex flex-col h-full animate-fade-in">
               <div className="p-4 border-b border-[#1e293b]">
-                <h3 className="text-sm font-bold text-white">AI Investigation Copilot</h3>
-                <p className="text-[10px] text-slate-500 mt-0.5">Ask questions grounded in case data</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">AI Investigation Copilot</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Grounded in this case&apos;s findings, flow, and evidence</p>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-400">AI SUMMARY</span>
+                </div>
+                {caseData?.is_demo && <p className="mt-2 text-[10px] text-amber-400">DEMO DATA context · verify conclusions against the evidence trail.</p>}
               </div>
 
               {/* Suggested Questions */}
@@ -1250,7 +1283,7 @@ function InvestigateContent() {
                     'Summarize the investigation.',
                   ].map((q) => (
                     <button key={q} onClick={() => askAI(q)}
-                      className="w-full text-left px-3 py-2 bg-[#0a0e17] border border-[#1e293b] rounded-lg text-xs text-slate-400 hover:text-white hover:border-blue-500/30 transition-colors">
+                      className="w-full min-h-10 text-left px-3 py-2 bg-[#0a0e17] border border-[#1e293b] rounded-lg text-xs text-slate-400 hover:text-white hover:border-blue-500/30 transition-colors">
                       {q}
                     </button>
                   ))}
@@ -1272,7 +1305,7 @@ function InvestigateContent() {
                   </div>
                 ))}
                 {aiLoading && (
-                  <div className="flex items-center gap-2 text-slate-500">
+                  <div role="status" aria-live="polite" className="flex items-center gap-2 text-slate-500">
                     <Loader2 className="w-3 h-3 animate-spin" />
                     <span className="text-xs">Analyzing case data...</span>
                   </div>
@@ -1286,11 +1319,12 @@ function InvestigateContent() {
                     value={aiInput}
                     onChange={(e) => setAiInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && askAI()}
+                    aria-label="Ask the investigation copilot"
                     placeholder="Ask about the investigation..."
                     className="flex-1 px-3 py-2 bg-[#0a0e17] border border-[#2a3548] rounded-lg text-xs text-white
                       focus:outline-none focus:border-blue-500 placeholder:text-slate-600"
                   />
-                  <button onClick={() => askAI()} className="p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500">
+                  <button type="button" onClick={() => askAI()} aria-label="Send question to investigation copilot" className="min-h-10 min-w-10 flex items-center justify-center p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500">
                     <Send className="w-3 h-3" />
                   </button>
                 </div>
@@ -1301,11 +1335,18 @@ function InvestigateContent() {
           {/* Report Tab */}
           {activeTab === 'report' && (
             <div className="p-4 animate-fade-in">
-              <h3 className="text-sm font-bold text-white mb-3">Investigation Report</h3>
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white">Forensic Report</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Structured output from the current investigation</p>
+                </div>
+                {caseData?.is_demo && <span className="text-[9px] px-1.5 py-0.5 rounded border border-amber-500/20 bg-amber-500/10 text-amber-400">DEMO DATA</span>}
+              </div>
               {!report ? (
                 <div className="text-center py-8">
                   <FileText className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-                  <p className="text-xs text-slate-500 mb-4">No report generated yet</p>
+                  <p className="text-xs text-slate-500 mb-1">No report generated yet</p>
+                  <p className="text-[10px] text-slate-600 mb-4">Generate a report after reviewing the case evidence.</p>
                   <button onClick={generateReport} disabled={generatingReport}
                     className="px-4 py-2 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-medium hover:bg-green-600/30">
                     {generatingReport ? 'Generating...' : 'Generate Report'}
