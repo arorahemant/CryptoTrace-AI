@@ -6,9 +6,9 @@ import uuid
 import re
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from typing import Optional
 
 from app.core.database import get_db
@@ -17,7 +17,7 @@ from app.core.security import decode_access_token
 from app.models.models import (
     Case, Wallet, Transaction, PatternFinding, Evidence,
     InvestigationEvent, FundFlow, RiskAssessment, VASPAttribution,
-    Report, User, CaseStatus, Blockchain,
+    Report, AuditLog, User, CaseStatus, Blockchain,
     UserRole,
 )
 from app.schemas.schemas import (
@@ -202,6 +202,61 @@ async def get_case(
             "risk_level": top_risk.risk_category.value if top_risk else "low",
             "risk_score": top_risk.risk_score if top_risk else 0,
         },
+    }
+
+
+@router.get("/{case_id}/audit")
+async def get_audit_log(
+    case_id: str,
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_get_user),
+):
+    """Return the authorized, case-scoped investigator audit history.
+
+    AuditLog predates an explicit case foreign key. Case-level actions use the
+    case UUID as ``resource_id``; child-resource actions carry ``case_id`` in
+    their structured details. Both references are filtered at the database
+    boundary so an investigator cannot see another case's history.
+    """
+    case = await _get_authorized_case(case_id, db, current_user)
+    case_reference = str(case.id)
+    case_scope = or_(
+        AuditLog.resource_id == case_reference,
+        AuditLog.details["case_id"].as_string() == case_reference,
+    )
+
+    total = await db.scalar(
+        select(func.count()).select_from(AuditLog).where(case_scope)
+    )
+    result = await db.execute(
+        select(AuditLog, User.username)
+        .outerjoin(User, AuditLog.user_id == User.id)
+        .where(case_scope)
+        .order_by(AuditLog.timestamp.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+
+    events = []
+    for audit_event, username in result.all():
+        events.append({
+            "id": str(audit_event.id),
+            "action": audit_event.action,
+            "resource_type": audit_event.resource_type,
+            "resource_id": audit_event.resource_id,
+            "details": audit_event.details if isinstance(audit_event.details, dict) else None,
+            "actor": username or "system",
+            "timestamp": audit_event.timestamp.isoformat() if audit_event.timestamp else None,
+        })
+
+    return {
+        "case_id": case_reference,
+        "events": events,
+        "total": total or 0,
+        "limit": limit,
+        "offset": offset,
     }
 
 

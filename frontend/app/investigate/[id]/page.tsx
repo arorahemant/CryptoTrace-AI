@@ -8,7 +8,7 @@ import {
   Shield, Search, Play,
   AlertTriangle, Eye, FileText, MessageSquare, ChevronLeft,
   Loader2, Crosshair,
-  Bookmark, ArrowRight, Activity, Send, XCircle
+  Bookmark, ArrowRight, Activity, ClipboardList, Send, XCircle
 } from 'lucide-react';
 import ReactFlow, {
   Background, Controls, MiniMap,
@@ -57,6 +57,7 @@ interface FindingData { pattern_name: string; description: string; severity: str
 interface EvidenceData { id: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; created_at?: string; is_bookmarked?: boolean; }
 interface TransactionData { id?: string; hash: string; from_address: string; to_address: string; amount: number; asset: string; hop_number?: number; }
 interface TimelineEvent { id?: string; title: string; description?: string; timestamp?: string; transaction_hash?: string; sequence_order?: number; }
+interface AuditEvent { id: string; action: string; resource_type?: string | null; resource_id?: string | null; details?: Record<string, unknown> | null; actor: string; timestamp?: string | null; }
 interface ReplayEvent {
   event_id?: string;
   step: number;
@@ -149,6 +150,7 @@ function InvestigateContent() {
   const [whyData, setWhyData] = useState<WhyData | null>(null);
   const [loadingWhy, setLoadingWhy] = useState(false);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [findings, setFindings] = useState<FindingData[]>([]);
   const [evidence, setEvidence] = useState<EvidenceData[]>([]);
   const [selectedEvidence, setSelectedEvidence] = useState<EvidenceData | null>(null);
@@ -187,6 +189,7 @@ function InvestigateContent() {
     try {
       const data = await api.getCase(caseId);
       setCaseData(data);
+      await loadAuditLog();
 
       // If already investigated, load data
       if (data.status === 'investigating' || data.status === 'review' || data.status === 'completed') {
@@ -200,6 +203,16 @@ function InvestigateContent() {
       setLoading(false);
     }
   };
+
+  async function loadAuditLog() {
+    try {
+      const data = await api.getAuditLog(caseId);
+      setAuditEvents(data.events || []);
+    } catch (err) {
+      console.error('Failed to load audit log', err);
+      setActionError(err instanceof Error ? err.message : 'Unable to load the audit log.');
+    }
+  }
 
   async function loadInvestigationData(caseRecord?: CaseDetail, investigationResult?: InvestigationData) {
     try {
@@ -271,6 +284,7 @@ function InvestigateContent() {
 
       // Load additional data
       await loadInvestigationData(undefined, result);
+      await loadAuditLog();
       setActiveTab('overview');
     } catch (err) {
       console.error('Investigation failed', err);
@@ -716,6 +730,7 @@ function InvestigateContent() {
               { id: 'findings', icon: AlertTriangle, label: 'Findings', count: findings.length },
               { id: 'evidence', icon: Bookmark, label: 'Evidence', count: evidence.length },
               { id: 'timeline', icon: Activity, label: 'Timeline', count: timeline.length },
+              { id: 'audit', icon: ClipboardList, label: 'Audit Log', count: auditEvents.length },
               { id: 'ai', icon: MessageSquare, label: 'AI Copilot' },
               { id: 'report', icon: FileText, label: 'Report' },
             ].map((tab) => (
@@ -1054,6 +1069,46 @@ function InvestigateContent() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Audit Log Tab */}
+          {activeTab === 'audit' && (
+            <div className="p-4 animate-fade-in">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white">Audit Log</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Case-scoped investigator activity</p>
+                </div>
+                <ClipboardList className="w-4 h-4 text-slate-500" />
+              </div>
+              {auditEvents.length === 0 ? (
+                <p className="text-xs text-slate-500">No audit events recorded for this case.</p>
+              ) : (
+                <div className="space-y-2">
+                  {auditEvents.map((event) => (
+                    <div key={event.id} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs font-medium text-white">
+                          {event.action.replaceAll('_', ' ').toUpperCase()}
+                        </span>
+                        <span className="text-[10px] text-slate-500 whitespace-nowrap">
+                          {event.timestamp ? new Date(event.timestamp).toLocaleString() : 'Timestamp unavailable'}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[10px] text-slate-400">
+                        {event.actor} · {event.resource_type || 'case'}
+                        {event.resource_id ? ` · ${event.resource_id.slice(0, 12)}…` : ''}
+                      </div>
+                      {event.details && Object.keys(event.details).length > 0 && (
+                        <div className="mt-1.5 break-words font-mono text-[10px] text-slate-500">
+                          {JSON.stringify(event.details)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

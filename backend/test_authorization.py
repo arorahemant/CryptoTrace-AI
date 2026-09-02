@@ -40,6 +40,7 @@ def test_idor_denied_for_investigator_and_allowed_for_supervisor():
         ("GET", f"/cases/{case_id}/graph"), ("GET", f"/cases/{case_id}/fund-flow"),
         ("GET", f"/cases/{case_id}/timeline"), ("GET", f"/cases/{case_id}/findings"),
         ("GET", f"/cases/{case_id}/evidence"), ("POST", f"/cases/{case_id}/replay"),
+        ("GET", f"/cases/{case_id}/audit"),
         ("POST", f"/cases/{case_id}/evidence"),
         ("POST", f"/cases/{case_id}/ai/query"), ("POST", f"/cases/{case_id}/report"),
         ("GET", f"/cases/{case_id}/report"), ("GET", f"/cases/{case_id}/why/0xReported001"),

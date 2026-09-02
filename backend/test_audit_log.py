@@ -44,6 +44,17 @@ def test_key_investigator_actions_are_audited():
     report = httpx.post(f"{BASE}/cases/{case_id}/report", headers=headers)
     report.raise_for_status()
 
+    audit_response = httpx.get(f"{BASE}/cases/{case_id}/audit", headers=headers)
+    audit_response.raise_for_status()
+    audit_data = audit_response.json()
+    assert audit_data["case_id"] == case_id
+    assert audit_data["total"] >= 5
+    assert {event["action"] for event in audit_data["events"]} >= {
+        "case_created", "case_viewed", "investigation_completed",
+        "evidence_saved", "report_generated",
+    }
+    assert all("ip_address" not in event for event in audit_data["events"])
+
     async def read_actions():
         async with async_session_factory() as db:
             result = await db.execute(

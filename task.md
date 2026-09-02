@@ -20,7 +20,7 @@
 | Replay | PARTIAL | Actual events include event ID/order, transaction, timestamp, node/edge highlights; UI selection synchronization is implemented and browser synchronization is unverified |
 | AI | COMPLETE | Supported and adversarial grounding suite passes, including missing/future transaction variants; unsupported claims refuse confidently before an LLM call |
 | Reports | COMPLETE | Structured report POST/GET exercised |
-| Audit Logs | COMPLETE | Case creation/view, investigation completion, evidence save, and report generation persist AuditLog records and are covered by tests |
+| Audit Logs | COMPLETE | Case creation/view, investigation completion, evidence save, and report generation persist AuditLog records; authorized case-scoped read API and investigator Audit Log tab are build/test covered |
 | Investigation idempotency | COMPLETE | One persisted snapshot per case; repeated and concurrent runs reuse the snapshot; persistence failure rolls back and a later retry succeeds |
 | Authentication | COMPLETE | Protected case routes return 401 without token; production rejects missing/weak signing secrets; demo uses an ephemeral process key |
 | Authorization | COMPLETE | Owner access, supervisor access, investigator IDOR denial, and unauthenticated denial tested across sensitive routes; one active user dependency is reused per request |
@@ -67,3 +67,10 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Investigation phone-width structure | PARTIAL | Navigation/graph/inspector stack responsively; touch/browser validation remains blocked. |
 | Installable web experience | PARTIAL | `manifest.webmanifest`, standalone display metadata, theme color, and viewport metadata are present; this is not Android APK packaging. |
 | Stitch screen migration | PARTIAL | Handoff reviewed and flagship visual language recorded; functional pages still contain legacy utility classes pending incremental migration. |
+
+## Audit Log surface - 2026-09-03
+
+| Gate | Status | Evidence / limitation |
+|---|---|---|
+| Case-scoped audit API | COMPLETE | `GET /cases/{case_id}/audit` enforces the existing owner/supervisor/admin case authorization and filters child-resource audit records by persisted case reference; IDOR regression coverage added |
+| Investigator Audit Log UI | COMPLETE | Investigation navigation renders actor, action, timestamp, resource context, and structured details from the API; IP addresses are intentionally omitted |

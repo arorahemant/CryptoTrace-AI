@@ -151,6 +151,14 @@ class ApiClient {
     return this.request(`/cases/${caseId}/timeline`);
   }
 
+  async getAuditLog(caseId: string, options?: { limit?: number; offset?: number }) {
+    const params = new URLSearchParams();
+    if (options?.limit != null) params.set('limit', String(options.limit));
+    if (options?.offset != null) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return this.request(`/cases/${caseId}/audit${query ? `?${query}` : ''}`);
+  }
+
   async getFundFlow(caseId: string) {
     return this.request(`/cases/${caseId}/fund-flow`);
   }
