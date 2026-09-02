@@ -30,3 +30,19 @@
 | Live Blockchain Provider | NOT STARTED | DemoProvider is the exercised source; no live provider credentials or network calls were used |
 
 Current validation: clean backend environment installed 86 declared packages with bcrypt 4.0.1; backend regression is 30 passed and explicit P0 validation is 90/90. The Pydantic class-based-config warning is removed, and no bcrypt warning appeared during clean-environment startup/authentication. P0 remediation tests cover secret enforcement, JWT validation, idempotent/retry-safe investigation execution, and single-request user resolution. Frontend TypeScript, lint, and production build pass; lint reports 0 errors and 0 warnings. Local runtime verification used the SQLite fallback. The legacy project venv reference remains broken and points to a deleted uv Python executable, but an ignored clean backend/.venv is now available for repeatable validation. PostgreSQL runtime, browser walkthrough, and live-provider behavior remain unverified.
+
+## P1 triage after P0 remediation - 2026-09-03
+
+| Finding | Status | Decision / evidence |
+|---|---|---|
+| JWT claim hardening | PARTIAL | Expiry, signature, algorithm allow-list, UUID subject validation, and active-user lookup are enforced. Issuer/audience/JTI claims are not yet required; defer until a multi-issuer or token-revocation deployment exists. |
+| Shared rate-limit scalability | PARTIAL | Failed-login throttling exists in-process and returns 429/Retry-After. A shared store or gateway policy is required for multi-worker production; not material to the single-process demo. |
+| Registration flooding | PARTIAL | Public registration is input-validated and always creates investigator role, but has no abuse throttle. Harden before public deployment; not required by the private demo workflow. |
+| Pagination | PARTIAL | Case artifacts are returned as bounded prototype collections; trace itself is capped at 200 transactions and 10 requested hops. Add cursor pagination before larger production datasets. |
+| Graph explosion | COMPLETE (prototype scope) | Trace BFS, cycle protection, max-hop validation, and the 200-transaction cap bound graph input. Larger-scale pagination remains a P1 scalability task. |
+| Pattern-engine complexity | PARTIAL | Rapid-movement pairing is quadratic in per-wallet incoming/outgoing records, but current trace input is bounded to 200 transactions. Optimize only when larger provider-backed traces are introduced. |
+| Request/body limits | PARTIAL | Pydantic bounds investigator fields and AI questions to 1,000 characters; no global body-size middleware is configured. Add at the deployment edge before exposing the API publicly. |
+| LLM context budgets | PARTIAL | The structured context limits transactions and output tokens, but does not enforce a serialized prompt byte/token budget across every collection. The demo has bounded data; add explicit budgeting before live LLM use. |
+| Provider selection / live provider | NOT STARTED | The exercised service intentionally uses the labelled DemoProvider; no live credentials or network provider is configured. Do not represent this as live blockchain support. |
+
+No P1 item above justified a code change in this pass. The P0 gate remains green and the private checkpoint is pushed at 83553247b2ec669e1468e686cd22626db00caa12.
