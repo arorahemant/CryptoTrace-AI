@@ -56,3 +56,14 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Installable Android application | NOT STARTED | No Android package exists yet. |
 | Hosted HTTPS backend | NOT STARTED | Local FastAPI is verified; no hosted deployment has been performed. |
 | Production PostgreSQL runtime | BLOCKED | Configuration and Docker Compose exist; runtime verification remains environment-blocked. |
+
+## Frontend architecture preparation - 2026-09-03
+
+| Gate | Status | Evidence / limitation |
+|---|---|---|
+| Institutional visual foundation | PARTIAL | Shared warm-neutral/teal tokens and safe palette translation are implemented; full screen-by-screen Stitch migration remains. |
+| Replay component boundary | COMPLETE | Replay controls are isolated in `frontend/components/investigation/ReplayBar.tsx`; state and callbacks remain owned by the investigation workspace. |
+| Dashboard phone-width structure | COMPLETE | Responsive content spacing, metric grid, case rows, and modal overflow are implemented and build-verified. |
+| Investigation phone-width structure | PARTIAL | Navigation/graph/inspector stack responsively; touch/browser validation remains blocked. |
+| Installable web experience | PARTIAL | `manifest.webmanifest`, standalone display metadata, theme color, and viewport metadata are present; this is not Android APK packaging. |
+| Stitch screen migration | PARTIAL | Handoff reviewed and flagship visual language recorded; functional pages still contain legacy utility classes pending incremental migration. |

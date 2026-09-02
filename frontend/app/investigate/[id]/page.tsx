@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import { ReplayBar } from '@/components/investigation/ReplayBar';
 import {
-  Shield, Search, Play, Pause, SkipForward, SkipBack,
+  Shield, Search, Play,
   AlertTriangle, Eye, FileText, MessageSquare, ChevronLeft,
   Loader2, Crosshair,
   Bookmark, ArrowRight, Activity, Send, XCircle
@@ -637,9 +638,9 @@ function InvestigateContent() {
   const riskBadge = getRiskBadge(investigation?.risk?.overall || caseData?.summary?.risk_level || 'low');
 
   return (
-    <div className="h-screen bg-[#0a0e17] flex flex-col overflow-hidden">
+    <div className="ct-investigation-shell h-screen bg-[#0a0e17] flex flex-col overflow-hidden">
       {/* ─── Top Bar ────────────────────────────────────────── */}
-      <header className="h-12 border-b border-[#1e293b] bg-[#111827]/90 backdrop-blur-sm flex items-center px-4 justify-between shrink-0">
+      <header className="ct-investigation-header h-12 border-b border-[#1e293b] bg-[#111827]/90 backdrop-blur-sm flex items-center px-4 justify-between shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={() => router.push('/dashboard')} className="p-1 rounded hover:bg-[#1e293b] text-slate-400 hover:text-white">
             <ChevronLeft className="w-4 h-4" />
@@ -703,9 +704,9 @@ function InvestigateContent() {
       )}
 
       {/* ─── Main Content ──────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="ct-investigation-main flex flex-1 overflow-hidden">
         {/* ─── Left Panel ──────────────────────────────────── */}
-        <div className="w-56 border-r border-[#1e293b] bg-[#111827]/50 flex flex-col shrink-0 overflow-y-auto">
+        <div className="ct-investigation-nav w-56 border-r border-[#1e293b] bg-[#111827]/50 flex flex-col shrink-0 overflow-y-auto">
           <div className="p-3">
             <div className="text-[10px] uppercase tracking-widest text-slate-500 font-medium mb-2">Navigation</div>
             {[
@@ -752,7 +753,7 @@ function InvestigateContent() {
         </div>
 
         {/* ─── Center: Graph ───────────────────────────────── */}
-        <div className="flex-1 flex flex-col relative">
+        <div className="ct-investigation-graph flex-1 flex flex-col relative">
           {!hasInvestigation ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
@@ -831,33 +832,19 @@ function InvestigateContent() {
 
           {/* ─── Replay Bar ──────────────────────────────── */}
           {replayEvents.length > 0 && replayStep >= 0 && (
-            <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-[#111827] border border-[#1e293b] rounded-xl px-5 py-3 shadow-2xl flex items-center gap-4 z-20">
-              <button onClick={() => moveReplayStep(-1)} className="text-slate-400 hover:text-white">
-                <SkipBack className="w-4 h-4" />
-              </button>
-              <button onClick={() => setReplaying(!replaying)} className="text-blue-400 hover:text-blue-300">
-                {replaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-              </button>
-              <button onClick={() => moveReplayStep(1)} className="text-slate-400 hover:text-white">
-                <SkipForward className="w-4 h-4" />
-              </button>
-              <div className="w-40 h-1 bg-[#1e293b] rounded-full relative">
-                <div
-                  className="h-full bg-blue-500 rounded-full transition-all"
-                  style={{ width: `${((replayStep + 1) / replayEvents.length) * 100}%` }}
-                />
-              </div>
-              <span className="text-xs text-slate-400 font-mono">{replayStep + 1}/{replayEvents.length}</span>
-              <div className="ml-2 max-w-xs">
-                <div className="text-xs text-white font-medium truncate">{replayEvents[replayStep]?.title}</div>
-                <div className="text-[10px] text-slate-500 truncate">{replayEvents[replayStep]?.description}</div>
-              </div>
-            </div>
+            <ReplayBar
+              events={replayEvents}
+              step={replayStep}
+              playing={replaying}
+              onStepBackward={() => moveReplayStep(-1)}
+              onTogglePlaying={() => setReplaying((current) => !current)}
+              onStepForward={() => moveReplayStep(1)}
+            />
           )}
         </div>
 
         {/* ─── Right Panel ─────────────────────────────────── */}
-        <div className="w-80 border-l border-[#1e293b] bg-[#111827]/50 overflow-y-auto shrink-0">
+        <div className="ct-investigation-inspector w-80 border-l border-[#1e293b] bg-[#111827]/50 overflow-y-auto shrink-0">
           {replayStep >= 0 && replayEvents[replayStep] && (
             <div className="p-3 border-b border-cyan-500/20 bg-cyan-500/5">
               <div className="text-[10px] uppercase tracking-widest text-cyan-400 font-medium mb-1">Replay context</div>

@@ -72,7 +72,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#0a0e17]">
       {/* Top Bar */}
-      <header className="h-14 border-b border-[#1e293b] bg-[#111827]/80 backdrop-blur-sm flex items-center px-6 justify-between sticky top-0 z-50">
+      <header className="min-h-14 border-b border-[#1e293b] bg-[#111827]/80 backdrop-blur-sm flex items-center px-4 sm:px-6 py-2 justify-between gap-3 sticky top-0 z-50">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
             <Shield className="w-4 h-4 text-white" />
@@ -83,16 +83,16 @@ export default function DashboardPage() {
           </span>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-slate-400">{user?.full_name || 'Investigator'}</span>
+          <span className="hidden sm:inline text-sm text-slate-400">{user?.full_name || 'Investigator'}</span>
           <button onClick={handleLogout} className="p-1.5 rounded-lg hover:bg-[#1e293b] transition-colors text-slate-400 hover:text-white">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Dashboard Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-white">Investigation Dashboard</h1>
             <p className="text-slate-400 text-sm mt-1">Manage and investigate fraud-linked cryptocurrency cases</p>
@@ -109,7 +109,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
             { label: 'Total Cases', value: cases.length, icon: Shield, color: 'blue' },
             { label: 'Investigating', value: cases.filter(c => c.status === 'investigating').length, icon: Search, color: 'amber' },
@@ -166,13 +166,13 @@ export default function DashboardPage() {
                 className="bg-[#111827] border border-[#1e293b] rounded-xl p-5 cursor-pointer
                   hover:border-blue-500/30 hover:bg-[#141c2b] transition-all duration-200 group"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
                     <div className="w-10 h-10 rounded-lg bg-[#1e293b] flex items-center justify-center">
                       <Shield className="w-5 h-5 text-blue-400" />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-3 mb-1">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-1">
                         <span className="font-mono text-xs text-slate-500">{c.case_number}</span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${statusColors[c.status] || statusColors.new}`}>
                           {c.status?.toUpperCase()}
@@ -183,12 +183,12 @@ export default function DashboardPage() {
                           </span>
                         )}
                       </div>
-                      <h3 className="text-white font-medium">{c.title}</h3>
-                      <p className="text-slate-500 text-xs mt-0.5 font-mono">{c.reported_wallet}</p>
+                      <h3 className="text-white font-medium truncate">{c.title}</h3>
+                      <p className="text-slate-500 text-xs mt-0.5 font-mono truncate">{c.reported_wallet}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
+                  <div className="flex items-center gap-4 pl-14 sm:pl-0">
+                    <div className="text-left sm:text-right">
                       <div className="text-xs text-slate-500">
                         {new Date(c.created_at).toLocaleDateString()}
                       </div>
@@ -249,8 +249,8 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#111827] border border-[#1e293b] rounded-2xl w-full max-w-lg mx-4 p-6 shadow-2xl animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="bg-[#111827] border border-[#1e293b] rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto mx-0 sm:mx-4 p-5 sm:p-6 shadow-2xl animate-fade-in">
         <h2 className="text-lg font-bold text-white mb-1">Create New Case</h2>
         <p className="text-slate-500 text-sm mb-6">Enter the reported wallet address to begin investigation</p>
 
