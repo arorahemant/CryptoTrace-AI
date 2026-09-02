@@ -703,6 +703,7 @@ function InvestigateContent() {
   const riskBadge = getRiskBadge(investigation?.risk?.overall || caseData?.summary?.risk_level || 'low');
   const traceHopCount = transactions.reduce((maxHop, transaction) => Math.max(maxHop, transaction.hop_number ?? 0), 0);
   const suspiciousTransactionCount = transactions.filter((transaction) => transaction.is_suspicious).length;
+  const linkedEvidenceCount = evidence.filter((item) => item.transaction_hash || item.finding_id).length;
   const riskCategory = (investigation?.risk?.overall || caseData?.summary?.risk_level || 'PENDING').toUpperCase();
 
   return (
@@ -1164,7 +1165,24 @@ function InvestigateContent() {
                   <h3 className="text-sm font-bold text-white">Evidence Center</h3>
                   <p className="text-[10px] text-slate-500 mt-0.5">Observed records linked to findings and transactions</p>
                 </div>
-                <Bookmark className="w-4 h-4 text-slate-500" />
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] uppercase tracking-wide text-slate-500">{evidence.length} records</span>
+                  {caseData?.is_demo && <span className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">DEMO DATA</span>}
+                  <Bookmark aria-hidden="true" className="w-4 h-4 text-slate-500" />
+                </div>
+              </div>
+              <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[9px] uppercase tracking-widest text-slate-500">Evidence chain</div>
+                    <div className="mt-1 text-xs font-medium text-white">Finding → reason → transaction</div>
+                  </div>
+                  <div className="text-right text-[10px] text-slate-500">
+                    <div>{linkedEvidenceCount} linked</div>
+                    <div>FACT records</div>
+                  </div>
+                </div>
+                <p className="mt-2 text-[10px] leading-relaxed text-slate-400">Select a record to inspect its persisted source, timestamp, and case-linked transaction context.</p>
               </div>
               {selectedEvidence && (
                 <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3">
@@ -1191,9 +1209,9 @@ function InvestigateContent() {
                 </div>
               )}
               {evidence.length === 0 ? (
-                <p className="text-xs text-slate-500">No evidence yet. Run investigation first.</p>
+                <p className="rounded-lg border border-dashed border-[#2a3548] px-3 py-4 text-xs text-slate-500">No evidence yet. Run investigation first.</p>
               ) : evidence.map((e, i) => (
-                <button key={e.id || i} onClick={() => selectEvidence(e)} aria-pressed={selectedEvidence?.id === e.id} className={`w-full text-left bg-[#0a0e17] border rounded-lg p-3 ${selectedEvidence?.id === e.id ? 'border-cyan-500/40' : 'border-[#1e293b]'}`}>
+                <button type="button" key={e.id || i} onClick={() => selectEvidence(e)} aria-pressed={selectedEvidence?.id === e.id} className={`w-full text-left bg-[#0a0e17] border rounded-lg p-3 ${selectedEvidence?.id === e.id ? 'border-cyan-500/40' : 'border-[#1e293b]'}`}>
                   <div className="flex items-center gap-2 mb-1">
                     <Bookmark className="w-3 h-3 text-blue-400" />
                     <span className="text-xs font-medium text-white">{e.title}</span>

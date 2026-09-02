@@ -8,9 +8,9 @@ The Next.js workspace presents case scope/risk at the top, navigation and filter
 
 The investigation navigation also exposes an authorized Audit Log view backed by `GET /cases/{case_id}/audit`. It is case-scoped, shows actor/action/resource/timestamp context, and deliberately omits stored IP addresses from the investigator UI.
 
-Evidence cards expose the persisted source, timestamp, finding reference, and supporting transaction hash when available, keeping the investigator-visible chain `finding → evidence → transaction` explicit.
+Evidence cards expose the persisted source, timestamp, finding reference, and supporting transaction hash when available, keeping the investigator-visible chain `finding → evidence → transaction` explicit. The Evidence Center also summarizes the persisted record set and makes the full `finding → reason → transaction` review path visible before the investigator opens an individual FACT record.
 
-The Evidence Center marks persisted evidence as `FACT` and selecting an item hydrates its linked transaction when that transaction is present in the same case. The AI Copilot is labeled `AI SUMMARY`, carries the current case context, and reminds investigators to verify conclusions against the evidence trail. Reports are labeled as structured output from the current investigation and preserve the existing fact/analysis/inference section types.
+The Evidence Center marks persisted evidence as `FACT` and selecting an item hydrates its linked transaction when that transaction is present in the same case. Replay controls are exposed as an accessible labeled region with progress semantics while retaining the existing event-driven graph, transaction, and evidence synchronization. The AI Copilot is labeled `AI SUMMARY`, carries the current case context, and reminds investigators to verify conclusions against the evidence trail. Reports are labeled as structured output from the current investigation and preserve the existing fact/analysis/inference section types.
 
 The shared API client keeps localhost as a development-only fallback. A production or installed-app build requires an explicit `NEXT_PUBLIC_API_URL`, preventing a phone from silently calling itself when the hosted HTTPS backend has not been configured.
 

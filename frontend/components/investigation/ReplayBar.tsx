@@ -30,7 +30,11 @@ export function ReplayBar({
   const progress = events.length > 0 ? ((step + 1) / events.length) * 100 : 0;
 
   return (
-    <div className="ct-replay-bar absolute bottom-16 left-1/2 -translate-x-1/2 bg-[#111827] border border-[#1e293b] rounded px-4 py-3 shadow-2xl flex items-center gap-3 z-20">
+    <div
+      className="ct-replay-bar absolute bottom-16 left-1/2 -translate-x-1/2 bg-[#111827] border border-[#1e293b] rounded px-4 py-3 shadow-2xl flex items-center gap-3 z-20"
+      role="region"
+      aria-label="Investigation replay controls"
+    >
       <button
         type="button"
         onClick={onStepBackward}
@@ -58,7 +62,14 @@ export function ReplayBar({
       >
         <SkipForward className="w-4 h-4" />
       </button>
-      <div className="w-40 h-1 bg-[#1e293b] rounded-full relative" aria-hidden="true">
+      <div
+        className="w-40 h-1 bg-[#1e293b] rounded-full relative"
+        role="progressbar"
+        aria-label="Replay progress"
+        aria-valuemin={0}
+        aria-valuemax={events.length}
+        aria-valuenow={step + 1}
+      >
         <div
           className="h-full bg-blue-500 rounded-full transition-all"
           style={{ width: `${progress}%` }}
