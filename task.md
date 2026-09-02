@@ -97,9 +97,9 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Screen / surface | Status | Evidence / limitation |
 |---|---|---|
 | Wallet Intake | COMPLETE | Existing dashboard case-creation flow now uses the institutional intake treatment, explicit Demo Network provenance, accessible field/dialog semantics, and existing backend validation; API behavior unchanged |
-| Transaction Trace | PARTIAL | Existing investigation transaction data now exposes timestamp/source and direct mouse/keyboard selection; full Stitch table treatment remains to be migrated |
+| Transaction Trace | PARTIAL | Existing investigation transaction data now uses a Stitch-aligned trace treatment with backend-derived transfer/hop/flagged summaries, explicit source → movement → destination cards, timestamp/source display, and direct mouse/keyboard selection; browser visual verification remains blocked |
 | Flagship Investigation Overview | PARTIAL | Existing React Flow workspace now uses restrained institutional graph styling with backend-driven topology counts; money-trail focus, timeline, findings, evidence, replay, AI, and report state remain connected; browser verification is unavailable |
-| Findings & Risk Analysis | PARTIAL | Backend-grounded findings/risk/WHY surface now labels deterministic analysis and exposes clickable supporting transaction hashes; full Stitch visual treatment remains |
+| Findings & Risk Analysis | PARTIAL | Backend-grounded findings/risk/WHY surface now uses a Stitch-aligned priority summary, deterministic-analysis label, affected-wallet WHY actions, and clickable supporting transaction hashes; browser visual verification remains blocked |
 | Evidence Center | PARTIAL | Persisted traceability and save flow are present; evidence cards now label observed facts and hydrate the linked transaction context; full Stitch visual treatment remains |
 | Investigation Replay | PARTIAL | ReplayBar boundary, synchronized event state, and event jump selector exist; full visual treatment and browser interaction remain unverified |
 | AI Copilot Workspace | PARTIAL | Case-grounded AI tab now labels AI Summary output and Demo context; Stitch visual treatment and browser verification remain |

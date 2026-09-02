@@ -59,6 +59,7 @@ interface FindingData {
   description: string;
   severity: string;
   confidence: number;
+  affected_wallets?: string[];
   supporting_transaction_ids?: string[];
   created_at?: string;
 }
@@ -623,6 +624,18 @@ function InvestigateContent() {
     setActiveTab('transactions');
   };
 
+  const selectWalletByAddress = (address: string) => {
+    const wallet = graphNodeData.current[address]
+      || nodes.find((node) => node.data.address === address)?.data;
+    if (!wallet) {
+      setActionError('The affected wallet is not available in this case.');
+      return;
+    }
+    setSelectedNode(wallet);
+    setActiveTab('overview');
+    void loadWhy(address);
+  };
+
   const searchGraph = () => {
     const query = graphSearch.trim().toLowerCase();
     if (!query) return;
@@ -688,6 +701,9 @@ function InvestigateContent() {
 
   const hasInvestigation = nodes.length > 0;
   const riskBadge = getRiskBadge(investigation?.risk?.overall || caseData?.summary?.risk_level || 'low');
+  const traceHopCount = transactions.reduce((maxHop, transaction) => Math.max(maxHop, transaction.hop_number ?? 0), 0);
+  const suspiciousTransactionCount = transactions.filter((transaction) => transaction.is_suspicious).length;
+  const riskCategory = (investigation?.risk?.overall || caseData?.summary?.risk_level || 'PENDING').toUpperCase();
 
   return (
     <div className="ct-investigation-shell h-screen bg-[#0a0e17] flex flex-col overflow-hidden">
@@ -1010,7 +1026,7 @@ function InvestigateContent() {
                         <div key={i} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-2.5">
                           <div className="flex items-center gap-2 mb-1">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border
-                              ${f.severity === 'high' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
+                              ${f.severity === 'high' || f.severity === 'critical' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
                               {f.severity?.toUpperCase()}
                             </span>
                             <span className="text-[10px] text-slate-400">{f.pattern_name}</span>
@@ -1028,14 +1044,32 @@ function InvestigateContent() {
           {activeTab === 'transactions' && selectedTransaction && (
             <div className="p-4 border-b border-[#1e293b] animate-fade-in">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-bold text-white">Selected Transaction</h3>
-                <button onClick={() => setSelectedTransaction(null)} className="text-slate-500 hover:text-white"><XCircle className="w-4 h-4" /></button>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Transaction Detail</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Observed movement selected from the trace</p>
+                </div>
+                <button type="button" aria-label="Clear selected transaction" onClick={() => setSelectedTransaction(null)} className="min-h-10 min-w-10 flex items-center justify-center text-slate-500 hover:text-white"><XCircle className="w-4 h-4" /></button>
               </div>
               <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 space-y-1.5">
                 <div className="text-[10px] text-blue-300 font-mono break-all">{selectedTransaction.hash}</div>
                 <div className="text-xs text-white font-mono">{selectedTransaction.amount.toFixed(4)} {selectedTransaction.asset}</div>
-                <div className="text-[10px] text-slate-400 break-all">{selectedTransaction.from_address} → {selectedTransaction.to_address}</div>
-                <button onClick={() => saveTransactionEvidence(selectedTransaction)} disabled={savingEvidence} className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-cyan-400 hover:text-cyan-300 disabled:opacity-50"><Bookmark className="w-3 h-3" /> SAVE EVIDENCE</button>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2 border-t border-blue-500/10 pt-2">
+                  <div className="min-w-0">
+                    <div className="text-[9px] uppercase tracking-widest text-slate-500">Source</div>
+                    <div className="mt-1 break-all font-mono text-[10px] text-slate-300">{selectedTransaction.from_address}</div>
+                  </div>
+                  <ArrowRight aria-hidden="true" className="mt-4 h-3.5 w-3.5 shrink-0 text-blue-400" />
+                  <div className="min-w-0 text-right">
+                    <div className="text-[9px] uppercase tracking-widest text-slate-500">Destination</div>
+                    <div className="mt-1 break-all font-mono text-[10px] text-slate-300">{selectedTransaction.to_address}</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500">
+                  <span>Hop {selectedTransaction.hop_number ?? '—'}</span>
+                  <span>{selectedTransaction.timestamp ? new Date(selectedTransaction.timestamp).toLocaleString() : 'Timestamp unavailable'}</span>
+                  {selectedTransaction.source && <span>{selectedTransaction.source}</span>}
+                </div>
+                <button type="button" onClick={() => void saveTransactionEvidence(selectedTransaction)} disabled={savingEvidence} className="mt-1 inline-flex min-h-10 items-center gap-1.5 text-[10px] text-cyan-400 hover:text-cyan-300 disabled:opacity-50"><Bookmark className="w-3 h-3" /> {savingEvidence ? 'Saving…' : 'SAVE EVIDENCE'}</button>
               </div>
             </div>
           )}
@@ -1052,15 +1086,28 @@ function InvestigateContent() {
                   {(investigation?.risk?.overall || caseData?.summary?.risk_level || 'PENDING').toUpperCase()} PRIORITY
                 </span>
               </div>
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3" aria-label="Investigation risk summary">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[9px] uppercase tracking-widest text-slate-500">Investigation priority</div>
+                    <div className="mt-1 text-sm font-semibold text-white">{riskCategory}</div>
+                  </div>
+                  <div className="text-right text-[10px] text-slate-500">
+                    <div>{findings.length} finding{findings.length === 1 ? '' : 's'}</div>
+                    <div>{evidence.length} evidence record{evidence.length === 1 ? '' : 's'}</div>
+                  </div>
+                </div>
+                <p className="mt-2 text-[10px] leading-relaxed text-slate-400">Risk prioritizes investigator review. Wallet-level scores and contributing signals are available in the Wallet Inspector.</p>
+              </div>
               {findings.length === 0 ? (
                 <p className="text-xs text-slate-500">No findings yet. Run investigation first.</p>
               ) : findings.map((f, i) => (
-                <div key={i} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-3">
+                <div key={f.id || `${f.pattern_name}-${i}`} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                     <span className="text-xs font-medium text-white">{f.pattern_name}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ml-auto
-                      ${f.severity === 'high' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
+                      ${f.severity === 'high' || f.severity === 'critical' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
                       {f.severity?.toUpperCase()}
                     </span>
                   </div>
@@ -1069,6 +1116,24 @@ function InvestigateContent() {
                     <span className="px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">DETERMINISTIC ANALYSIS</span>
                     <span className="text-slate-600">Confidence: {(f.confidence * 100).toFixed(0)}%</span>
                   </div>
+                  {(f.affected_wallets ?? []).length > 0 && (
+                    <div className="mt-2 border-t border-[#1e293b] pt-2">
+                      <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">WHY / affected wallets</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(f.affected_wallets ?? []).slice(0, 4).map((address) => (
+                          <button
+                            key={address}
+                            type="button"
+                            onClick={() => selectWalletByAddress(address)}
+                            aria-label={`Explain why wallet ${address} was flagged`}
+                            className="min-h-10 rounded border border-amber-500/30 px-2 py-1 font-mono text-[10px] text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/10"
+                          >
+                            WHY {address.slice(0, 12)}…
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {(f.supporting_transaction_ids ?? []).length > 0 && (
                     <div className="mt-2 border-t border-[#1e293b] pt-2">
                       <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Supporting transactions</div>
@@ -1212,10 +1277,34 @@ function InvestigateContent() {
 
           {/* Transactions Tab */}
           {activeTab === 'transactions' && (
-            <div className="p-4 animate-fade-in">
-              <h3 className="text-sm font-bold text-white mb-3">Transactions</h3>
+            <div className="p-4 space-y-3 animate-fade-in">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white">Transaction Trace</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Source → movement → destination, ordered by traced hop</p>
+                </div>
+                <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[9px] font-medium text-amber-400">
+                  {caseData?.is_demo ? 'DEMO DATA' : 'CASE DATA'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2" aria-label="Transaction trace summary">
+                <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-2">
+                  <div className="text-sm font-semibold text-white">{transactions.length}</div>
+                  <div className="text-[9px] uppercase tracking-wide text-slate-500">Transfers</div>
+                </div>
+                <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-2">
+                  <div className="text-sm font-semibold text-white">{traceHopCount}</div>
+                  <div className="text-[9px] uppercase tracking-wide text-slate-500">Hops covered</div>
+                </div>
+                <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-2">
+                  <div className="text-sm font-semibold text-white">{suspiciousTransactionCount}</div>
+                  <div className="text-[9px] uppercase tracking-wide text-slate-500">Flagged transfers</div>
+                </div>
+              </div>
               <div className="space-y-2">
-                {transactions.map((t, i) => (
+                {transactions.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-[#2a3548] px-3 py-4 text-xs text-slate-500">No traced transactions are available for this case.</p>
+                ) : transactions.map((t, i) => (
                   <div
                     key={t.id || t.hash || i}
                     role="button"
@@ -1234,21 +1323,35 @@ function InvestigateContent() {
                       ${selectedTransaction?.hash === t.hash ? 'border-blue-500/50' : 'border-[#1e293b] hover:border-blue-500/30'}`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-mono text-blue-400">{t.hash?.slice(0, 20)}...</span>
-                      <span className="text-[10px] text-slate-500">Hop {t.hop_number}</span>
+                      <span className="min-w-0 break-all font-mono text-[10px] text-blue-400">TX {t.hash?.slice(0, 20)}...</span>
+                      <div className="ml-2 flex shrink-0 items-center gap-1.5">
+                        {t.is_suspicious && <span className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[9px] font-medium text-red-400">FLAGGED</span>}
+                        <span className="text-[10px] text-slate-500">Hop {t.hop_number ?? '—'}</span>
+                      </div>
                     </div>
-                    <div className="text-[10px] text-slate-400">
-                      {t.from_address?.slice(0, 12)}... → {t.to_address?.slice(0, 12)}...
+                    <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[9px] uppercase tracking-widest text-slate-500">Source</div>
+                        <div className="mt-1 break-all font-mono text-[10px] text-slate-400">{t.from_address}</div>
+                      </div>
+                      <ArrowRight aria-hidden="true" className="mt-4 h-3.5 w-3.5 shrink-0 text-blue-400" />
+                      <div className="min-w-0 text-right">
+                        <div className="text-[9px] uppercase tracking-widest text-slate-500">Destination</div>
+                        <div className="mt-1 break-all font-mono text-[10px] text-slate-400">{t.to_address}</div>
+                      </div>
                     </div>
-                    <div className="text-xs text-white font-mono mt-0.5">{t.amount?.toFixed(4)} {t.asset}</div>
-                    <div className="mt-1 text-[10px] text-slate-500">
-                      {t.timestamp ? new Date(t.timestamp).toLocaleString() : 'Timestamp unavailable'}
-                      {t.source ? ` · ${t.source}` : ''}
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[#1e293b] pt-2">
+                      <span className="text-xs font-semibold text-white font-mono">{t.amount?.toFixed(4)} {t.asset}</span>
+                      <span className="text-[10px] text-slate-500">
+                        {t.timestamp ? new Date(t.timestamp).toLocaleString() : 'Timestamp unavailable'}
+                        {t.source ? ` · ${t.source}` : ''}
+                      </span>
                     </div>
                     <button
+                      type="button"
                       onClick={(event) => { event.stopPropagation(); void saveTransactionEvidence(t); }}
                       disabled={savingEvidence}
-                      className="mt-2 inline-flex items-center gap-1.5 text-[10px] text-blue-400 hover:text-blue-300 disabled:opacity-50"
+                      className="mt-2 inline-flex min-h-10 items-center gap-1.5 text-[10px] text-blue-400 hover:text-blue-300 disabled:opacity-50"
                     >
                       <Bookmark className="w-3 h-3" /> {savingEvidence ? 'Saving…' : 'SAVE EVIDENCE'}
                     </button>
