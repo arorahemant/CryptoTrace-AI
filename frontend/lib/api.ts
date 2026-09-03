@@ -93,6 +93,22 @@ class ApiClient {
     return this.request('/auth/register', { method: 'POST', body: data });
   }
 
+  async registerReporter(data: { email: string; username: string; password: string; full_name: string }) {
+    return this.request('/auth/reporter/register', { method: 'POST', body: data });
+  }
+
+  async updatePublicInvestigatorProfile(data: {
+    display_name: string;
+    role_title: string;
+    is_reporter_visible: boolean;
+  }) {
+    return this.request('/auth/me/public-profile', { method: 'PUT', body: data });
+  }
+
+  async getPublicInvestigatorProfile() {
+    return this.request('/auth/me/public-profile');
+  }
+
   // ─── Cases ─────────────────────────────────────────────
   async createCase(data: {
     title: string;
@@ -110,6 +126,32 @@ class ApiClient {
 
   async getCase(caseId: string) {
     return this.request(`/cases/${caseId}`);
+  }
+
+  // ─── Reporter intake and limited status ────────────────────
+  async createReporterSubmission(data: {
+    title: string;
+    reported_wallet: string;
+    blockchain: string;
+    description?: string;
+  }) {
+    return this.request('/reporter/submissions', { method: 'POST', body: data });
+  }
+
+  async listReporterSubmissions() {
+    return this.request('/reporter/submissions');
+  }
+
+  async getReporterSubmission(submissionId: string) {
+    return this.request(`/reporter/submissions/${submissionId}`);
+  }
+
+  async listReporterSubmissionsForReview() {
+    return this.request('/reporter/submissions/review');
+  }
+
+  async assignReporterSubmission(submissionId: string) {
+    return this.request(`/reporter/submissions/${submissionId}/assign`, { method: 'POST' });
   }
 
   // ─── Investigation ────────────────────────────────────

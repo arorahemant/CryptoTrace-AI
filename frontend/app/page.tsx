@@ -11,6 +11,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('investigate123');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [demoRole, setDemoRole] = useState<'investigator' | 'reporter'>('investigator');
+
+  const selectDemoRole = (role: 'investigator' | 'reporter') => {
+    setDemoRole(role);
+    setUsername(role);
+    setPassword(role === 'investigator' ? 'investigate123' : 'report123');
+    setError('');
+  };
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -22,7 +30,7 @@ export default function LoginPage() {
       if (typeof window !== 'undefined') {
         localStorage.setItem('cryptotrace_user', JSON.stringify(data.user));
       }
-      router.push('/dashboard');
+      router.push(data.user.role === 'reporter' ? '/reporter' : '/dashboard');
     } catch {
       setError('Sign-in unsuccessful. Check your username and password, then try again.');
     } finally {
@@ -107,7 +115,20 @@ export default function LoginPage() {
                 <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--risk-medium)]" aria-hidden="true" />
                 <div>
                   <div className="text-xs font-bold uppercase tracking-wide text-[var(--risk-medium)]">Demonstration workspace</div>
-                  <p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">Demo investigator credentials are pre-filled. Data shown after sign-in is demonstration data and must not be treated as a live-chain result.</p>
+                  <p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">Choose a role to preview its authorized workflow. Resulting data is demonstration data and must not be treated as a live-chain result.</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2" aria-label="Demo role">
+                    {(['investigator', 'reporter'] as const).map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        aria-pressed={demoRole === role}
+                        onClick={() => selectDemoRole(role)}
+                        className={`min-h-10 rounded-md border px-2 text-xs font-semibold capitalize ${demoRole === role ? 'border-[var(--ct-primary)] bg-white text-[var(--ct-primary)]' : 'border-[#d9c3af] bg-transparent text-[var(--ct-ink-muted)] hover:bg-white/70'}`}
+                      >
+                        {role} demo
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

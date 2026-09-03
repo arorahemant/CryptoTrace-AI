@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import {
   Search, Plus, Shield, Clock, CheckCircle,
-  ChevronRight, Loader2, LogOut, Settings as SettingsIcon
+  ChevronRight, Inbox, Loader2, LogOut, Settings as SettingsIcon
 } from 'lucide-react';
 
 const statusColors: Record<string, string> = {
@@ -34,6 +34,14 @@ interface CaseRecord {
 }
 
 interface UserRecord { full_name: string; username: string; role: string; }
+interface ReporterReviewRecord {
+  id: string;
+  reference_number: string;
+  title: string;
+  reported_wallet: string;
+  blockchain: string;
+  submitted_at: string;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -41,6 +49,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [reporterSubmissions, setReporterSubmissions] = useState<ReporterReviewRecord[]>([]);
+  const [assigningSubmission, setAssigningSubmission] = useState('');
   const [user] = useState<UserRecord | null>(() => {
     if (typeof window === 'undefined') return null;
     const stored = localStorage.getItem('cryptotrace_user');
@@ -61,14 +71,42 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const loadReporterSubmissions = useCallback(async () => {
+    try {
+      const data = await api.listReporterSubmissionsForReview();
+      setReporterSubmissions(data.submissions || []);
+    } catch (err) {
+      console.error('Reporter submissions could not be loaded', err);
+    }
+  }, []);
+
   useEffect(() => {
     const token = api.getToken();
     if (!token) {
       router.push('/');
       return;
     }
+    if (user?.role === 'reporter') {
+      router.replace('/reporter');
+      return;
+    }
     void Promise.resolve().then(() => loadCases());
-  }, [router, loadCases]);
+    void Promise.resolve().then(() => loadReporterSubmissions());
+  }, [router, loadCases, loadReporterSubmissions, user?.role]);
+
+  const assignSubmission = async (submissionId: string) => {
+    setAssigningSubmission(submissionId);
+    try {
+      const assigned = await api.assignReporterSubmission(submissionId);
+      setReporterSubmissions((current) => current.filter((item) => item.id !== submissionId));
+      router.push(`/investigate/${assigned.case_id}`);
+    } catch (err) {
+      console.error('Reporter submission assignment failed', err);
+      setLoadError('The reported wallet could not be assigned. Refresh the queue and try again.');
+    } finally {
+      setAssigningSubmission('');
+    }
+  };
 
   const handleLogout = () => {
     api.clearToken();
@@ -134,6 +172,38 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
+
+        {reporterSubmissions.length > 0 && (
+          <section className="mb-8" aria-labelledby="reporter-queue-heading">
+            <div className="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <p className="ct-eyebrow mb-1">Reporter intake</p>
+                <h2 id="reporter-queue-heading" className="text-lg font-bold text-[var(--ct-ink)]">Reports awaiting assignment</h2>
+              </div>
+              <span className="ct-status-chip bg-[var(--ct-warning-surface)] text-[var(--risk-medium)]">{reporterSubmissions.length} waiting</span>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {reporterSubmissions.map((submission) => (
+                <article key={submission.id} className="ct-card p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--ct-surface-high)] text-[var(--ct-primary)]"><Inbox className="h-4 w-4" /></div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-[10px] text-[var(--ct-outline)]">{submission.reference_number}</div>
+                      <h3 className="mt-1 truncate text-sm font-semibold text-[var(--ct-ink)]">{submission.title}</h3>
+                      <p className="mt-1 truncate font-mono text-[10px] text-[var(--ct-ink-muted)]">{submission.reported_wallet}</p>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[10px] text-[var(--ct-outline)]">Submitted {new Date(submission.submitted_at).toLocaleString()}</span>
+                        <button type="button" onClick={() => void assignSubmission(submission.id)} disabled={assigningSubmission === submission.id} className="ct-button-primary px-3 py-1.5 text-xs disabled:opacity-50">
+                          {assigningSubmission === submission.id ? 'Assigning…' : 'Assign to me'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Cases List */}
         {loading ? (

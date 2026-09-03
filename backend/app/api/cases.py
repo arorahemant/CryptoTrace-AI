@@ -3,7 +3,6 @@ CryptoTrace AI - Cases & Investigation API
 Core investigation endpoints — the heart of the product.
 """
 import uuid
-import re
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Header, Request, Query
@@ -14,6 +13,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.audit import record_audit_event
 from app.core.security import decode_access_token
+from app.core.wallet_validation import validate_wallet_format
 from app.models.models import (
     Case, Wallet, Transaction, PatternFinding, Evidence,
     InvestigationEvent, FundFlow, RiskAssessment, VASPAttribution,
@@ -40,6 +40,11 @@ async def _get_user(
         token = authorization[7:]
         payload = decode_access_token(token)
         if payload and payload.get("sub"):
+            if payload.get("role") == "reporter":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Investigator access required",
+                )
             try:
                 user = await db.get(User, uuid.UUID(payload["sub"]))
             except (ValueError, AttributeError, TypeError):
@@ -124,7 +129,7 @@ async def create_case(
     blockchain = Blockchain(request.blockchain.value)
     # Validate wallet address format
     wallet = request.reported_wallet.strip()
-    if not _validate_wallet_format(wallet, blockchain):
+    if not validate_wallet_format(wallet, blockchain):
         raise HTTPException(
             status_code=400,
             detail=f"Invalid wallet address format for {blockchain.value}.",
@@ -860,25 +865,6 @@ async def get_report(
         "status": report.status,
         "created_at": report.created_at.isoformat() if report.created_at else None,
     }
-
-
-def _validate_wallet_format(address: str, blockchain: Blockchain = Blockchain.DEMO) -> bool:
-    """Validate an address without pretending to validate ownership.
-
-    Demo addresses intentionally use readable synthetic identifiers. EVM
-    production chains require a canonical 20-byte hex address; Bitcoin accepts
-    the common Base58 and bech32 forms. The provider still decides whether an
-    address exists on-chain.
-    """
-    if blockchain == Blockchain.DEMO:
-        return re.fullmatch(r"0x[A-Za-z0-9]{8,253}", address) is not None
-    if blockchain in (Blockchain.ETHEREUM, Blockchain.POLYGON, Blockchain.BSC):
-        return re.fullmatch(r"0x[0-9a-fA-F]{40}", address) is not None
-    if blockchain == Blockchain.BITCOIN:
-        return re.fullmatch(
-            r"(?:bc1[a-z0-9]{11,87}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})", address
-        ) is not None
-    return False
 
 
 def _case_to_response(case: Case) -> CaseResponse:

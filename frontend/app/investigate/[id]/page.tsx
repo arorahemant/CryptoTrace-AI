@@ -327,10 +327,21 @@ function InvestigateContent() {
 
   // ─── Load Case ────────────────────────────────────────────
   useEffect(() => {
+    const storedUser = localStorage.getItem('cryptotrace_user');
+    if (storedUser) {
+      try {
+        if ((JSON.parse(storedUser) as { role?: string }).role === 'reporter') {
+          router.replace('/reporter');
+          return;
+        }
+      } catch {
+        // The authenticated API remains the authority if cached UI state is invalid.
+      }
+    }
     void Promise.resolve().then(() => loadCase());
     // loadCase intentionally runs only when the route case changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId]);
+  }, [caseId, router]);
 
   // ─── Run Investigation ────────────────────────────────────
   const runInvestigation = async () => {

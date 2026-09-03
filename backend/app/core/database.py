@@ -4,6 +4,7 @@ Async SQLAlchemy engine and session management.
 Supports PostgreSQL (production) and SQLite (development/prototype).
 """
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
@@ -105,6 +106,39 @@ async def get_db():
 
 
 async def init_db():
-    """Create all tables."""
+    """Bootstrap the verified baseline, then apply versioned migrations."""
+    legacy_table_names = {
+        "users", "cases", "wallets", "transactions", "fund_flows",
+        "pattern_findings", "vasp_attributions", "risk_assessments",
+        "evidence", "investigation_events", "ai_conversations", "reports",
+        "audit_logs",
+    }
+
+    def upgrade_schema(connection):
+        from alembic import command
+        from alembic.config import Config
+
+        backend_root = Path(__file__).resolve().parents[2]
+        config = Config(str(backend_root / "alembic.ini"))
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        legacy_tables = [
+            table
+            for name, table in Base.metadata.tables.items()
+            if name in legacy_table_names
+        ]
+        await conn.run_sync(
+            lambda connection: Base.metadata.create_all(
+                connection,
+                tables=legacy_tables,
+                checkfirst=True,
+            )
+        )
+
+    # Alembic owns its migration transaction on a separate connection. This
+    # avoids nesting its environment inside the baseline bootstrap transaction.
+    async with engine.connect() as conn:
+        await conn.run_sync(upgrade_schema)
+        await conn.commit()

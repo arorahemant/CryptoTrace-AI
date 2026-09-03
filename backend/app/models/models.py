@@ -95,6 +95,46 @@ class User(Base):
     # Relationships
     cases = relationship("Case", back_populates="investigator")
     audit_logs = relationship("AuditLog", back_populates="user")
+    public_profile = relationship(
+        "InvestigatorPublicProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class InvestigatorPublicProfile(Base):
+    """Investigator fields explicitly approved for reporter visibility."""
+    __tablename__ = "investigator_public_profiles"
+
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    display_name = Column(String(255), nullable=False)
+    role_title = Column(String(255), nullable=False)
+    is_reporter_visible = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user = relationship("User", back_populates="public_profile")
+
+
+class ReporterAccount(Base):
+    """Authenticated reporter identity, isolated from investigator RBAC."""
+    __tablename__ = "reporter_accounts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    full_name = Column(String(255), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    submissions = relationship(
+        "ReporterSubmission",
+        back_populates="reporter",
+        cascade="all, delete-orphan",
+    )
 
 
 # ─── Case ──────────────────────────────────────────────────────────────────────
@@ -133,6 +173,41 @@ class Case(Base):
     __table_args__ = (
         Index("ix_cases_status", "status"),
         Index("ix_cases_investigator", "investigator_id"),
+    )
+
+
+class ReporterSubmission(Base):
+    """Reporter-owned intake record linked to a case only after assignment."""
+    __tablename__ = "reporter_submissions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    reference_number = Column(String(50), unique=True, nullable=False, index=True)
+    reporter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("reporter_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    case_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    title = Column(String(255), nullable=False)
+    reported_wallet = Column(String(255), nullable=False)
+    blockchain = Column(String(50), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(50), nullable=False, default="report_received")
+    submitted_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    reporter = relationship("ReporterAccount", back_populates="submissions")
+    case = relationship("Case")
+
+    __table_args__ = (
+        Index("ix_reporter_submissions_status", "status"),
     )
 
 

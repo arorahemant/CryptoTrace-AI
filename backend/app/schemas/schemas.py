@@ -15,6 +15,7 @@ class UserRoleSchema(str, Enum):
     INVESTIGATOR = "investigator"
     SUPERVISOR = "supervisor"
     ADMIN = "admin"
+    REPORTER = "reporter"
 
 
 class CaseStatusSchema(str, Enum):
@@ -65,6 +66,13 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6)
     full_name: str = Field(..., min_length=2, max_length=255)
     role: UserRoleSchema = UserRoleSchema.INVESTIGATOR
+
+
+class ReporterRegisterRequest(BaseModel):
+    email: EmailStr
+    username: str = Field(..., min_length=3, max_length=100)
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: str = Field(..., min_length=2, max_length=255)
 
 
 # ─── User ──────────────────────────────────────────────────────────────────────
@@ -118,6 +126,45 @@ class CaseResponse(BaseModel):
 class CaseListResponse(BaseModel):
     cases: List[CaseResponse]
     total: int
+
+
+class ReporterSubmissionCreate(BaseModel):
+    title: str = Field(..., min_length=3, max_length=255)
+    reported_wallet: str = Field(..., min_length=10, max_length=255)
+    blockchain: BlockchainSchema = BlockchainSchema.ETHEREUM
+    description: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ReporterVisibleInvestigator(BaseModel):
+    display_name: str
+    role_title: str
+
+
+class ReporterSubmissionResponse(BaseModel):
+    id: UUID
+    reference_number: str
+    title: str
+    reported_wallet: str
+    blockchain: BlockchainSchema
+    status: str
+    status_label: str
+    submitted_at: datetime
+    last_status_update: datetime
+    next_step: str
+    assigned_investigator: Optional[ReporterVisibleInvestigator] = None
+
+
+class InvestigatorPublicProfileUpdate(BaseModel):
+    display_name: str = Field(..., min_length=2, max_length=255)
+    role_title: str = Field(..., min_length=2, max_length=255)
+    is_reporter_visible: bool = False
+
+
+class InvestigatorPublicProfileResponse(BaseModel):
+    display_name: str
+    role_title: str
+    is_reporter_visible: bool
+    updated_at: datetime
 
 
 # ─── Wallet ────────────────────────────────────────────────────────────────────

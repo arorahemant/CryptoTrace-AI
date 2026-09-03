@@ -14,7 +14,8 @@ from app.core.database import init_db, engine, async_session_factory
 from app.core.security import get_password_hash
 from app.api.auth import router as auth_router
 from app.api.cases import router as cases_router
-from app.models.models import User, UserRole
+from app.api.reporter import router as reporter_router
+from app.models.models import ReporterAccount, User, UserRole
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -84,6 +85,19 @@ async def lifespan(app: FastAPI):
             await session.commit()
             logger.info("✅ Demo admin created")
 
+        reporter_result = await session.execute(
+            select(ReporterAccount).where(ReporterAccount.username == "reporter")
+        )
+        if settings.DEMO_MODE and not reporter_result.scalars().first():
+            session.add(ReporterAccount(
+                email="reporter@cryptotrace.ai",
+                username="reporter",
+                hashed_password=get_password_hash("report123"),
+                full_name="Demo Reporter",
+            ))
+            await session.commit()
+            logger.info("✅ Demo reporter created")
+
     logger.info(f"✅ CryptoTrace AI Backend ready (Demo Mode: {settings.DEMO_MODE})")
 
     yield
@@ -123,6 +137,7 @@ app.add_middleware(
 # Routes
 app.include_router(auth_router, prefix=settings.API_PREFIX)
 app.include_router(cases_router, prefix=settings.API_PREFIX)
+app.include_router(reporter_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/health")
