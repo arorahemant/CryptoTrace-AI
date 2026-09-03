@@ -82,6 +82,35 @@ def _generate_case_number() -> str:
     return f"CT-{ts.year}-{short_id}"
 
 
+def _case_audit_scope(case_reference: str):
+    """Build the database-level audit filter used for one authorized case."""
+    return or_(
+        AuditLog.resource_id == case_reference,
+        AuditLog.details["case_id"].as_string() == case_reference,
+    )
+
+
+async def _get_case_assignment(db: AsyncSession, case: Case) -> dict:
+    """Return the minimum persisted identity needed for case accountability.
+
+    The current schema records an initial owner at case creation but does not
+    support reassignment history. Do not imply that a complete assignment
+    history exists until it is explicitly modeled.
+    """
+    investigator = await db.get(User, case.investigator_id)
+    last_activity = await db.scalar(
+        select(func.max(AuditLog.timestamp)).where(_case_audit_scope(str(case.id)))
+    )
+    return {
+        "investigator_id": str(case.investigator_id),
+        "display_name": investigator.full_name if investigator else None,
+        "role": investigator.role.value if investigator and investigator.role else None,
+        "assigned_at": case.created_at.isoformat() if case.created_at else None,
+        "last_activity_at": last_activity.isoformat() if last_activity else None,
+        "history_available": False,
+    }
+
+
 @router.post("", response_model=CaseResponse)
 async def create_case(
     request: CaseCreate,
@@ -126,6 +155,7 @@ async def create_case(
         details={"blockchain": case.blockchain.value, "is_demo": case.is_demo},
         request=request_context,
     )
+    await db.flush()
 
     return _case_to_response(case)
 
@@ -167,6 +197,7 @@ async def get_case(
         resource_id=str(case.id),
         request=request_context,
     )
+    await db.flush()
 
     # Get counts
     wallet_count = await db.scalar(
@@ -194,6 +225,7 @@ async def get_case(
     case_data = _case_to_response(case)
     return {
         **case_data.model_dump(),
+        "assignment": await _get_case_assignment(db, case),
         "summary": {
             "total_wallets": wallet_count or 0,
             "total_transactions": tx_count or 0,
@@ -222,10 +254,7 @@ async def get_audit_log(
     """
     case = await _get_authorized_case(case_id, db, current_user)
     case_reference = str(case.id)
-    case_scope = or_(
-        AuditLog.resource_id == case_reference,
-        AuditLog.details["case_id"].as_string() == case_reference,
-    )
+    case_scope = _case_audit_scope(case_reference)
 
     total = await db.scalar(
         select(func.count()).select_from(AuditLog).where(case_scope)

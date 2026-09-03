@@ -25,6 +25,21 @@ def test_idor_denied_for_investigator_and_allowed_for_supervisor():
     case.raise_for_status()
     case_id = case.json()["id"]
 
+    owner_identity = httpx.post(
+        f"{BASE}/auth/login",
+        json={"username": "investigator", "password": "investigate123"},
+    ).json()["user"]
+    owner_detail = httpx.get(f"{BASE}/cases/{case_id}", headers=owner_headers)
+    owner_detail.raise_for_status()
+    assignment = owner_detail.json()["assignment"]
+    assert assignment["investigator_id"] == owner_identity["id"]
+    assert assignment["display_name"] == owner_identity["full_name"]
+    assert assignment["role"] == owner_identity["role"] == "investigator"
+    assert assignment["assigned_at"]
+    assert assignment["last_activity_at"]
+    assert assignment["history_available"] is False
+    assert "email" not in assignment and "username" not in assignment
+
     username = f"idor_{uuid.uuid4().hex[:10]}"
     register = httpx.post(
         f"{BASE}/auth/register",

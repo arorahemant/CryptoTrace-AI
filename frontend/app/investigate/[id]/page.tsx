@@ -97,7 +97,15 @@ interface ReplayEvent {
   highlight_edges?: string[];
   cumulative_amount?: number;
 }
-interface CaseDetail { id: string; case_number: string; title: string; status: string; is_demo: boolean; reported_wallet: string; blockchain?: string; summary?: { risk_level?: string; total_wallets?: number; total_transactions?: number }; }
+interface CaseAssignment {
+  investigator_id: string;
+  display_name?: string | null;
+  role?: string | null;
+  assigned_at?: string | null;
+  last_activity_at?: string | null;
+  history_available: boolean;
+}
+interface CaseDetail { id: string; case_number: string; title: string; status: string; is_demo: boolean; reported_wallet: string; blockchain?: string; assignment?: CaseAssignment; summary?: { risk_level?: string; total_wallets?: number; total_transactions?: number }; }
 interface WhyData { wallet_address: string; reasons: string[]; findings?: FindingData[]; }
 interface ReportSection { title: string; section_type: string; content: string; }
 interface InvestigationData {
@@ -1017,6 +1025,27 @@ function InvestigateContent() {
                   </div>
                 ))}
               </div>
+              <section className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-3" aria-labelledby="assigned-investigator-heading">
+                <div id="assigned-investigator-heading" className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Assigned investigator</div>
+                {caseData.assignment?.display_name ? (
+                  <div className="mt-2">
+                    <div className="text-xs font-semibold text-white">{caseData.assignment.display_name}</div>
+                    <div className="mt-0.5 text-[10px] capitalize text-slate-400">{caseData.assignment.role?.replaceAll('_', ' ') || 'Role unavailable'}</div>
+                    <dl className="mt-2 grid grid-cols-2 gap-2 border-t border-[#1e293b] pt-2 text-[10px]">
+                      <div>
+                        <dt className="text-slate-500">Case assigned</dt>
+                        <dd className="mt-0.5 text-slate-300">{caseData.assignment.assigned_at ? new Date(caseData.assignment.assigned_at).toLocaleString() : 'Unavailable'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500">Last activity</dt>
+                        <dd className="mt-0.5 text-slate-300">{caseData.assignment.last_activity_at ? new Date(caseData.assignment.last_activity_at).toLocaleString() : 'Unavailable'}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-[10px] leading-relaxed text-slate-500">Assignment information is unavailable for this case.</p>
+                )}
+              </section>
             </div>
           )}
 
