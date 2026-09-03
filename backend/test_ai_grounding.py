@@ -14,10 +14,26 @@ def test_grounded_and_adversarial_questions():
     investigation = httpx.post(f"{BASE}/cases/{case_id}/investigate", headers=headers, json={})
     investigation.raise_for_status()
 
+    greeting = httpx.post(f"{BASE}/cases/{case_id}/ai/query", headers=headers, json={"question": "hello"})
+    greeting.raise_for_status()
+    greeting_body = greeting.json()
+    assert greeting_body["grounded"] is True
+    assert "CryptoTrace investigation copilot" in greeting_body["answer"]
+    assert "case-scoped records" in greeting_body["answer"]
+
+    capabilities = httpx.post(
+        f"{BASE}/cases/{case_id}/ai/query",
+        headers=headers,
+        json={"question": "what can you do?"},
+    )
+    capabilities.raise_for_status()
+    assert "money trail" in capabilities.json()["answer"]
+
     supported = [
         "Where did the money go?", "Why was Wallet B flagged?",
         "Which wallets are potential intermediaries?", "What transactions support this?",
         "What is the likely VASP?", "Summarize the investigation.",
+        "Explain this simply.", "What should I investigate next?",
     ]
     for question in supported:
         response = httpx.post(f"{BASE}/cases/{case_id}/ai/query", headers=headers, json={"question": question})
@@ -26,6 +42,14 @@ def test_grounded_and_adversarial_questions():
         assert body["grounded"] is True
         assert body["answer"]
         assert body["sources"]
+
+    unrelated = httpx.post(
+        f"{BASE}/cases/{case_id}/ai/query",
+        headers=headers,
+        json={"question": "Write a recipe for dinner."},
+    )
+    unrelated.raise_for_status()
+    assert "outside this investigation" in unrelated.json()["answer"]
 
     adversarial = [
         "Who owns this wallet?", "Is this person definitely a criminal?",

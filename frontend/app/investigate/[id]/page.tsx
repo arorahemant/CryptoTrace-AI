@@ -1507,21 +1507,23 @@ function InvestigateContent() {
                   Run the investigation first so Copilot can use this case&apos;s trace, findings, and evidence.
                 </div>
               ) : aiMessages.length === 0 && (
-                <div className="p-4 space-y-2">
-                  {[
-                    'Where did the money go?',
-                    'Why was this wallet flagged?',
-                    'What evidence supports this?',
-                    'What suspicious patterns were detected?',
-                    'Which wallets are intermediaries?',
-                    'What is the likely VASP?',
-                    'Summarize the investigation.',
-                  ].map((q) => (
-                    <button type="button" key={q} onClick={() => askAI(q)}
-                      className="w-full min-h-10 text-left px-3 py-2 bg-[#0a0e17] border border-[#1e293b] rounded-lg text-xs text-slate-400 hover:text-white hover:border-blue-500/30 transition-colors">
-                      {q}
-                    </button>
-                  ))}
+                <div className="p-4">
+                  <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-3 text-xs leading-relaxed text-slate-300">
+                    Hello. I’m the CryptoTrace investigation copilot. Ask me to explain this case, walk through the money trail, or point to supporting evidence.
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2" aria-label="Example questions">
+                    {[
+                      'Summarize this case',
+                      'Where did the money go?',
+                      'What evidence supports this?',
+                      'What should I investigate next?',
+                    ].map((q) => (
+                      <button type="button" key={q} onClick={() => askAI(q)}
+                        className="min-h-10 rounded-full border border-[#8aa9a9] bg-white px-3 py-1.5 text-left text-[10px] font-medium text-[#124343] hover:bg-[#f4f4ef]">
+                        {q}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
