@@ -733,7 +733,7 @@ function InvestigateContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0e17] flex items-center justify-center">
+      <div className="min-h-screen bg-[var(--ct-surface)] flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
       </div>
     );
@@ -741,7 +741,7 @@ function InvestigateContent() {
 
   if (loadError || !caseData) {
     return (
-      <div className="min-h-screen bg-[#0a0e17] flex items-center justify-center px-6">
+      <div className="min-h-screen bg-[var(--ct-surface)] flex items-center justify-center px-6">
         <div className="max-w-md text-center">
           <Shield className="w-10 h-10 text-red-400 mx-auto mb-4" />
           <h1 className="text-lg font-semibold text-white mb-2">Case unavailable</h1>
@@ -773,9 +773,10 @@ function InvestigateContent() {
   });
 
   return (
-    <div className="ct-investigation-shell flex h-screen flex-col overflow-hidden bg-[#0a0e17]">
+    <main id="main-content" className="ct-investigation-shell flex h-screen flex-col overflow-hidden bg-[var(--ct-surface)]">
+      <h1 className="sr-only">Investigation for case {caseData.case_number}</h1>
       {/* ─── Top Bar ────────────────────────────────────────── */}
-      <header className="ct-investigation-header h-12 border-b border-[#1e293b] bg-[#111827]/90 backdrop-blur-sm flex items-center px-4 justify-between shrink-0">
+      <header className="ct-investigation-header h-12 border-b border-[var(--ct-outline-variant)] bg-white/96 backdrop-blur-sm flex items-center px-4 justify-between shrink-0">
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => router.push('/dashboard')} aria-label="Back to case dashboard" className="ct-icon-button flex items-center justify-center">
             <ChevronLeft className="w-4 h-4" />
@@ -809,15 +810,15 @@ function InvestigateContent() {
           ) : (
             <>
               <button onClick={startReplay}
-                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-cyan-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
+                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[var(--ct-surface-high)] text-[var(--ct-primary)] rounded text-xs font-medium hover:bg-[var(--ct-surface-low)] border border-[var(--ct-outline-variant)]">
                 <Play className="w-3 h-3" /> Replay
               </button>
               <button onClick={() => setActiveTab('ai')}
-                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-purple-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
+                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[var(--ct-surface-high)] text-[var(--accent-purple)] rounded text-xs font-medium hover:bg-[var(--ct-surface-low)] border border-[var(--ct-outline-variant)]">
                 <MessageSquare className="w-3 h-3" /> Ask Copilot
               </button>
               <button onClick={generateReport} disabled={generatingReport}
-                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-green-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
+                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[var(--ct-surface-high)] text-[var(--risk-low)] rounded text-xs font-medium hover:bg-[var(--ct-surface-low)] border border-[var(--ct-outline-variant)]">
                 {generatingReport ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
                 Report
               </button>
@@ -867,7 +868,7 @@ function InvestigateContent() {
       {/* ─── Main Content ──────────────────────────────────── */}
       <div className="ct-investigation-main flex flex-1 overflow-hidden">
         {/* ─── Left Panel ──────────────────────────────────── */}
-        <div className="ct-investigation-nav w-56 border-r border-[#1e293b] bg-[#111827]/50 flex flex-col shrink-0 overflow-y-auto">
+        <div className="ct-investigation-nav w-56 border-r border-[var(--ct-outline-variant)] bg-white flex flex-col shrink-0 overflow-y-auto">
           <div className="p-3">
             <div className="text-[10px] uppercase tracking-widest text-slate-500 font-medium mb-2">Navigation</div>
             {[
@@ -884,13 +885,13 @@ function InvestigateContent() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full min-h-10 flex items-center gap-2 px-3 py-2 rounded-lg text-xs mb-0.5 transition-all
-                  ${activeTab === tab.id ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'text-slate-400 hover:bg-[#1e293b] hover:text-white'}`}
+                className={`w-full min-h-10 flex items-center gap-2 px-3 py-2 rounded text-xs mb-0.5 transition-all
+                  ${activeTab === tab.id ? 'bg-[var(--ct-primary-container)] text-[var(--ct-primary)] border border-[#8aa9a9]' : 'text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)] hover:text-[var(--ct-ink)]'}`}
               >
                 <tab.icon className="w-3.5 h-3.5" />
                 <span className="flex-1 text-left">{tab.label}</span>
                 {tab.count != null && tab.count > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.5 bg-[#1e293b] rounded-full text-slate-500">{tab.count}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[var(--ct-surface-high)] rounded-full text-[var(--ct-outline)]">{tab.count}</span>
                 )}
               </button>
             ))}
@@ -898,7 +899,7 @@ function InvestigateContent() {
 
           {/* Money Trail Button */}
           {hasInvestigation && (
-            <div className="p-3 mt-auto border-t border-[#1e293b]">
+            <div className="p-3 mt-auto border-t border-[var(--ct-outline-variant)]">
               <button
                 onClick={() => setShowMoneyTrail(!showMoneyTrail)}
                 className={`w-full min-h-11 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold transition-all
@@ -919,7 +920,7 @@ function InvestigateContent() {
           {!hasInvestigation ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <div className="w-20 h-20 rounded-2xl bg-[#111827] border border-[#1e293b] flex items-center justify-center mx-auto mb-4">
+                <div className="w-20 h-20 rounded-2xl bg-[var(--ct-surface-high)] border border-[var(--ct-outline-variant)] flex items-center justify-center mx-auto mb-4">
                   <Search className="w-10 h-10 text-slate-600" />
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2">Ready to investigate</h3>
@@ -940,13 +941,13 @@ function InvestigateContent() {
             </div>
           ) : (
             <div className="flex-1 relative" style={{ height: '100%' }}>
-              <div className="absolute top-3 right-3 z-10 hidden sm:block rounded border border-[#2a3548] bg-[#111827]/95 px-3 py-2 shadow-xl">
+              <div className="absolute top-3 right-3 z-10 hidden sm:block rounded border border-[var(--ct-outline-variant)] bg-white/95 px-3 py-2 shadow-[var(--ct-shadow-sm)]">
                 <div className="text-[10px] uppercase tracking-widest text-slate-500 font-medium">How the money moved</div>
                 <div className="mt-1 text-[10px] text-slate-400 font-mono">{nodes.length} wallets · {edges.length} transfers</div>
               </div>
               <form
                 onSubmit={(event) => { event.preventDefault(); searchGraph(); }}
-                className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded-lg border border-[#2a3548] bg-[#111827]/95 p-1 shadow-xl"
+                className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded border border-[var(--ct-outline-variant)] bg-white/95 p-1 shadow-[var(--ct-shadow-sm)]"
               >
                 <Search className="ml-2 h-3.5 w-3.5 text-slate-500" />
                 <input
@@ -961,7 +962,7 @@ function InvestigateContent() {
                 </button>
               </form>
               {graphSearchMessage && (
-                <div className="absolute left-3 top-14 z-10 rounded-md border border-amber-500/20 bg-[#111827]/95 px-2.5 py-1.5 text-[10px] text-amber-300 shadow-lg">
+                <div className="absolute left-3 top-14 z-10 rounded-md border border-[#e2a88c] bg-[var(--ct-warning-surface)]/95 px-2.5 py-1.5 text-[10px] text-[var(--risk-medium)] shadow-[var(--ct-shadow-sm)]">
                   {graphSearchMessage}
                 </div>
               )}
@@ -1010,7 +1011,7 @@ function InvestigateContent() {
         </div>
 
         {/* ─── Right Panel ─────────────────────────────────── */}
-        <div className="ct-investigation-inspector w-80 border-l border-[#1e293b] bg-[#111827]/50 overflow-y-auto shrink-0">
+        <div className="ct-investigation-inspector w-80 border-l border-[var(--ct-outline-variant)] bg-white overflow-y-auto shrink-0">
           {replayStep >= 0 && replayEvents[replayStep] && (
             <div className="p-3 border-b border-cyan-500/20 bg-cyan-500/5">
               <div className="text-[10px] uppercase tracking-widest text-cyan-400 font-medium mb-1">Replay context</div>
@@ -1030,19 +1031,19 @@ function InvestigateContent() {
                   { label: 'Findings', value: findings.length },
                   { label: 'Evidence', value: evidence.length },
                 ].map(s => (
-                  <div key={s.label} className="bg-[#0a0e17] rounded-lg p-3 border border-[#1e293b]">
+                  <div key={s.label} className="bg-[var(--ct-surface)] rounded-lg p-3 border border-[var(--ct-outline-variant)]">
                     <div className="text-lg font-bold text-white">{s.value}</div>
                     <div className="text-[10px] text-slate-500">{s.label}</div>
                   </div>
                 ))}
               </div>
-              <section className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-3" aria-labelledby="assigned-investigator-heading">
+              <section className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3" aria-labelledby="assigned-investigator-heading">
                 <div id="assigned-investigator-heading" className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Assigned investigator</div>
                 {caseData.assignment?.display_name ? (
                   <div className="mt-2">
                     <div className="text-xs font-semibold text-white">{caseData.assignment.display_name}</div>
                     <div className="mt-0.5 text-[10px] capitalize text-slate-400">{caseData.assignment.role?.replaceAll('_', ' ') || 'Role unavailable'}</div>
-                    <dl className="mt-2 grid grid-cols-2 gap-2 border-t border-[#1e293b] pt-2 text-[10px]">
+                    <dl className="mt-2 grid grid-cols-2 gap-2 border-t border-[var(--ct-outline-variant)] pt-2 text-[10px]">
                       <div>
                         <dt className="text-slate-500">Case assigned</dt>
                         <dd className="mt-0.5 text-slate-300">{caseData.assignment.assigned_at ? new Date(caseData.assignment.assigned_at).toLocaleString() : 'Unavailable'}</dd>
@@ -1061,25 +1062,25 @@ function InvestigateContent() {
           )}
 
           {activeTab === 'overview' && selectedNode && (
-            <div className="p-4 space-y-3 border-t border-[#1e293b] animate-slide-in">
+            <div className="p-4 space-y-3 border-t border-[var(--ct-outline-variant)] animate-slide-in">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-white">Wallet Inspector</h3>
                 <button onClick={() => setSelectedNode(null)} className="text-slate-500 hover:text-white">
                   <XCircle className="w-4 h-4" />
                 </button>
               </div>
-              <div className="bg-[#0a0e17] rounded-lg p-3 border border-[#1e293b]">
+              <div className="bg-[var(--ct-surface)] rounded-lg p-3 border border-[var(--ct-outline-variant)]">
                 <div className="text-[10px] text-slate-500 mb-1">Address</div>
                 <div className="text-xs font-mono text-blue-400 break-all">{selectedNode.address}</div>
               </div>
               {selectedNode.label && (
-                <div className="bg-[#0a0e17] rounded-lg p-3 border border-[#1e293b]">
+                <div className="bg-[var(--ct-surface)] rounded-lg p-3 border border-[var(--ct-outline-variant)]">
                   <div className="text-[10px] text-slate-500 mb-1">Label</div>
                   <div className="text-xs text-white">{selectedNode.label}</div>
                 </div>
               )}
               {(selectedNode.risk_category || selectedNode.risk_score != null) && (
-                <div className="bg-[#0a0e17] rounded-lg p-3 border border-red-500/20">
+                <div className="bg-[var(--ct-danger-surface)] rounded-lg p-3 border border-[#e8a5a0]">
                   <div className="text-[10px] uppercase tracking-widest text-red-300 font-medium mb-1">Risk assessment</div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-white">{selectedNode.risk_category?.toUpperCase() || 'UNASSESSED'}</span>
@@ -1091,7 +1092,7 @@ function InvestigateContent() {
                 </div>
               )}
               {selectedNode.vasp_name && (
-                <div className="bg-[#0a0e17] rounded-lg p-3 border border-purple-500/20">
+                <div className="bg-[var(--ct-surface)] rounded-lg p-3 border border-[#d9b9a5]">
                   <div className="text-[10px] uppercase tracking-widest text-purple-300 font-medium mb-1">Attribution</div>
                   <div className="text-xs text-white">{selectedNode.vasp_name}</div>
                   <div className="text-[10px] text-slate-400 mt-1">
@@ -1102,11 +1103,11 @@ function InvestigateContent() {
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">
-                <div className="bg-[#0a0e17] rounded-lg p-2 border border-[#1e293b]">
+                <div className="bg-[var(--ct-surface)] rounded-lg p-2 border border-[var(--ct-outline-variant)]">
                   <div className="text-[10px] text-slate-500">Received</div>
                   <div className="text-xs text-green-400 font-mono">{selectedNode.total_received?.toFixed(4)}</div>
                 </div>
-                <div className="bg-[#0a0e17] rounded-lg p-2 border border-[#1e293b]">
+                <div className="bg-[var(--ct-surface)] rounded-lg p-2 border border-[var(--ct-outline-variant)]">
                   <div className="text-[10px] text-slate-500">Sent</div>
                   <div className="text-xs text-red-400 font-mono">{selectedNode.total_sent?.toFixed(4)}</div>
                 </div>
@@ -1136,7 +1137,7 @@ function InvestigateContent() {
                     <>
                       <div className="text-[10px] uppercase tracking-widest text-slate-500 font-medium mt-3">Supporting Findings</div>
                       {(whyData.findings ?? []).map((f, i: number) => (
-                        <div key={i} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-2.5">
+                        <div key={i} className="bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg p-2.5">
                           <div className="flex items-center gap-2 mb-1">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border
                               ${f.severity === 'high' || f.severity === 'critical' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
@@ -1155,7 +1156,7 @@ function InvestigateContent() {
           )}
 
           {activeTab === 'transactions' && selectedTransaction && (
-            <div className="p-4 border-b border-[#1e293b] animate-fade-in">
+            <div className="p-4 border-b border-[var(--ct-outline-variant)] animate-fade-in">
               <div className="flex items-center justify-between mb-2">
                 <div>
                   <h3 className="text-sm font-bold text-white">Transaction Detail</h3>
@@ -1215,7 +1216,7 @@ function InvestigateContent() {
               {findings.length === 0 ? (
                 <p className="text-xs text-slate-500">No findings yet. Run investigation first.</p>
               ) : findings.map((f, i) => (
-                <div key={f.id || `${f.pattern_name}-${i}`} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-3">
+                <div key={f.id || `${f.pattern_name}-${i}`} className="bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg p-3">
                   <div className="mb-3 flex items-center gap-2">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                     <span className="text-xs font-medium text-white">{f.pattern_name}</span>
@@ -1241,7 +1242,7 @@ function InvestigateContent() {
                     </div>
                   </div>
                   {(f.affected_wallets ?? []).length > 0 && (
-                    <div className="mt-2 border-t border-[#1e293b] pt-2">
+                    <div className="mt-2 border-t border-[var(--ct-outline-variant)] pt-2">
                       <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Next · explain a flagged wallet</div>
                       <div className="flex flex-wrap gap-1.5">
                         {(f.affected_wallets ?? []).slice(0, 4).map((address) => (
@@ -1259,7 +1260,7 @@ function InvestigateContent() {
                     </div>
                   )}
                   {(f.supporting_transaction_ids ?? []).length > 0 && (
-                    <div className="mt-2 border-t border-[#1e293b] pt-2">
+                    <div className="mt-2 border-t border-[var(--ct-outline-variant)] pt-2">
                       <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Transactions supporting this finding</div>
                       <div className="flex flex-wrap gap-1.5">
                         {(f.supporting_transaction_ids ?? []).slice(0, 4).map((hash) => (
@@ -1267,7 +1268,7 @@ function InvestigateContent() {
                             key={hash}
                             type="button"
                             onClick={() => selectTransactionByHash(hash)}
-                            className="min-h-10 rounded border border-[#2a3548] px-2 py-1 font-mono text-[10px] text-blue-400 hover:border-blue-500/40 hover:text-blue-300"
+                            className="min-h-10 rounded border border-[var(--ct-outline-variant)] px-2 py-1 font-mono text-[10px] text-[var(--ct-primary)] hover:border-[#8aa9a9] hover:text-[var(--accent-cyan)]"
                           >
                             View TX {hash.slice(0, 12)}…
                           </button>
@@ -1294,7 +1295,7 @@ function InvestigateContent() {
                   <Bookmark aria-hidden="true" className="w-4 h-4 text-slate-500" />
                 </div>
               </div>
-              <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-3">
+              <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-[9px] uppercase tracking-widest text-slate-500">Evidence chain</div>
@@ -1332,9 +1333,9 @@ function InvestigateContent() {
                 </div>
               )}
               {evidence.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-[#2a3548] px-3 py-4 text-xs text-slate-500">No evidence yet. Run investigation first.</p>
+                <p className="rounded-lg border border-dashed border-[var(--ct-outline-variant)] px-3 py-4 text-xs text-[var(--ct-ink-muted)]">No evidence yet. Run investigation first.</p>
               ) : evidence.map((e, i) => (
-                <button type="button" key={e.id || i} onClick={() => selectEvidence(e)} aria-pressed={selectedEvidence?.id === e.id} className={`w-full text-left bg-[#0a0e17] border rounded-lg p-3 ${selectedEvidence?.id === e.id ? 'border-cyan-500/40' : 'border-[#1e293b]'}`}>
+                <button type="button" key={e.id || i} onClick={() => selectEvidence(e)} aria-pressed={selectedEvidence?.id === e.id} className={`w-full text-left bg-[var(--ct-surface)] border rounded-lg p-3 ${selectedEvidence?.id === e.id ? 'border-[#8aa9a9]' : 'border-[var(--ct-outline-variant)]'}`}>
                   <div className="flex items-center gap-2 mb-1">
                     <Bookmark className="w-3 h-3 text-blue-400" />
                     <span className="text-xs font-medium text-white">{e.title}</span>
@@ -1363,14 +1364,14 @@ function InvestigateContent() {
                 <span className="text-[9px] uppercase tracking-wide text-slate-500">{timeline.length} events</span>
               </div>
               {timeline.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-[#2a3548] px-3 py-4 text-xs text-slate-500">No timeline events are available yet. Run the investigation first.</p>
+                <p className="rounded-lg border border-dashed border-[var(--ct-outline-variant)] px-3 py-4 text-xs text-[var(--ct-ink-muted)]">No timeline events are available yet. Run the investigation first.</p>
               ) : (
                 <div className="space-y-0">
                 {timeline.map((e, i) => (
                   <button type="button" key={i} onClick={() => jumpToReplayEvent(e)} className={`min-h-10 w-full text-left flex gap-3 group rounded-lg ${replayEvents[replayStep]?.transaction_hash && replayEvents[replayStep]?.transaction_hash === e.transaction_hash ? 'bg-blue-500/5' : ''}`}>
                     <div className="flex flex-col items-center">
-                      <div className="w-2.5 h-2.5 rounded-full bg-blue-500 border-2 border-[#111827] z-10" />
-                      {i < timeline.length - 1 && <div className="w-0.5 flex-1 bg-[#1e293b]" />}
+                      <div className="w-2.5 h-2.5 rounded-full bg-[var(--ct-primary)] border-2 border-white z-10" />
+                      {i < timeline.length - 1 && <div className="w-0.5 flex-1 bg-[var(--ct-outline-variant)]" />}
                     </div>
                     <div className="pb-4 flex-1">
                       <div className="text-[10px] text-slate-500 font-mono mb-0.5">
@@ -1401,7 +1402,7 @@ function InvestigateContent() {
               ) : (
                 <div className="space-y-2">
                   {auditEvents.map((event) => (
-                    <div key={event.id} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-3">
+                    <div key={event.id} className="bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg p-3">
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-xs font-medium text-white">
                           {event.action.replaceAll('_', ' ').toUpperCase()}
@@ -1439,22 +1440,22 @@ function InvestigateContent() {
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-2" aria-label="Transaction trace summary">
-                <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-2">
+                <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2">
                   <div className="text-sm font-semibold text-white">{transactions.length}</div>
                   <div className="text-[9px] uppercase tracking-wide text-slate-500">Transfers</div>
                 </div>
-                <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-2">
+                <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2">
                   <div className="text-sm font-semibold text-white">{traceHopCount}</div>
                   <div className="text-[9px] uppercase tracking-wide text-slate-500">Hops covered</div>
                 </div>
-                <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-2">
+                <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2">
                   <div className="text-sm font-semibold text-white">{suspiciousTransactionCount}</div>
                   <div className="text-[9px] uppercase tracking-wide text-slate-500">Flagged transfers</div>
                 </div>
               </div>
               <div className="space-y-2">
                 {transactions.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-[#2a3548] px-3 py-4 text-xs text-slate-500">No traced transactions are available for this case.</p>
+                  <p className="rounded-lg border border-dashed border-[var(--ct-outline-variant)] px-3 py-4 text-xs text-[var(--ct-ink-muted)]">No traced transactions are available for this case.</p>
                 ) : transactions.map((t, i) => (
                   <div
                     key={t.id || t.hash || i}
@@ -1470,8 +1471,8 @@ function InvestigateContent() {
                         setActiveTab('transactions');
                       }
                     }}
-                    className={`bg-[#0a0e17] border rounded-lg p-2.5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500
-                      ${selectedTransaction?.hash === t.hash ? 'border-blue-500/50' : 'border-[#1e293b] hover:border-blue-500/30'}`}
+                    className={`bg-[var(--ct-surface)] border rounded-lg p-2.5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ct-primary)]
+                      ${selectedTransaction?.hash === t.hash ? 'border-[#8aa9a9]' : 'border-[var(--ct-outline-variant)] hover:border-[#8aa9a9]'}`}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="min-w-0 break-all font-mono text-[10px] text-blue-400">TX {t.hash?.slice(0, 20)}...</span>
@@ -1491,7 +1492,7 @@ function InvestigateContent() {
                         <div className="mt-1 break-all font-mono text-[10px] text-slate-400">{t.to_address}</div>
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[#1e293b] pt-2">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[var(--ct-outline-variant)] pt-2">
                       <span className="text-xs font-semibold text-white font-mono">{t.amount?.toFixed(4)} {t.asset}</span>
                       <span className="text-[10px] text-slate-500">
                         {t.timestamp ? new Date(t.timestamp).toLocaleString() : 'Timestamp unavailable'}
@@ -1516,7 +1517,7 @@ function InvestigateContent() {
           {/* AI Tab */}
           {activeTab === 'ai' && (
             <div className="flex flex-col h-full animate-fade-in">
-              <div className="p-4 border-b border-[#1e293b]">
+              <div className="p-4 border-b border-[var(--ct-outline-variant)]">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="text-sm font-bold text-white">AI Investigation Copilot</h3>
@@ -1526,15 +1527,15 @@ function InvestigateContent() {
                 </div>
                 {caseData?.is_demo && <p className="mt-2 text-[10px] text-amber-400">DEMO DATA context · verify conclusions against the evidence trail.</p>}
                 <div className="mt-3 grid grid-cols-3 gap-2" aria-label="Copilot grounding context">
-                  <div className="rounded border border-[#1e293b] bg-[#0a0e17] p-2">
+                  <div className="rounded border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2">
                     <div className="text-sm font-semibold text-white">{transactions.length}</div>
                     <div className="text-[9px] uppercase tracking-wide text-slate-500">Transfers</div>
                   </div>
-                  <div className="rounded border border-[#1e293b] bg-[#0a0e17] p-2">
+                  <div className="rounded border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2">
                     <div className="text-sm font-semibold text-white">{findings.length}</div>
                     <div className="text-[9px] uppercase tracking-wide text-slate-500">Findings</div>
                   </div>
-                  <div className="rounded border border-[#1e293b] bg-[#0a0e17] p-2">
+                  <div className="rounded border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2">
                     <div className="text-sm font-semibold text-white">{evidence.length}</div>
                     <div className="text-[9px] uppercase tracking-wide text-slate-500">Evidence</div>
                   </div>
@@ -1543,12 +1544,12 @@ function InvestigateContent() {
 
               {/* Suggested Questions */}
               {!hasInvestigation ? (
-                <div className="m-4 rounded-lg border border-dashed border-[#2a3548] px-3 py-4 text-xs text-slate-500">
+                <div className="m-4 rounded-lg border border-dashed border-[var(--ct-outline-variant)] px-3 py-4 text-xs text-[var(--ct-ink-muted)]">
                   Run the investigation first so Copilot can use this case&apos;s trace, findings, and evidence.
                 </div>
               ) : aiMessages.length === 0 && (
                 <div className="p-4">
-                  <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-3 text-xs leading-relaxed text-slate-300">
+                  <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3 text-xs leading-relaxed text-[var(--ct-ink-muted)]">
                     Hello. I’m the CryptoTrace investigation copilot. Ask me to explain this case, walk through the money trail, or point to supporting evidence.
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2" aria-label="Example questions">
@@ -1574,7 +1575,7 @@ function InvestigateContent() {
                     <div className={`inline-block max-w-[90%] px-3 py-2 rounded-lg text-xs leading-relaxed
                       ${msg.role === 'user'
                         ? 'bg-blue-600/20 text-blue-200 border border-blue-500/20'
-                        : 'bg-[#0a0e17] text-slate-300 border border-[#1e293b]'
+                        : 'bg-[var(--ct-surface)] text-[var(--ct-ink-muted)] border border-[var(--ct-outline-variant)]'
                       }`}
                     >
                       <div className="whitespace-pre-wrap">{msg.content}</div>
@@ -1590,7 +1591,7 @@ function InvestigateContent() {
               </div>
 
               {/* Input */}
-              <div className="p-3 border-t border-[#1e293b]">
+              <div className="p-3 border-t border-[var(--ct-outline-variant)]">
                 <div className="flex gap-2">
                   <input
                     value={aiInput}
@@ -1600,7 +1601,7 @@ function InvestigateContent() {
                     disabled={!hasInvestigation || aiLoading}
                     maxLength={1000}
                     placeholder="Ask about the investigation..."
-                    className="flex-1 px-3 py-2 bg-[#0a0e17] border border-[#2a3548] rounded-lg text-xs text-white
+                    className="flex-1 px-3 py-2 bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg text-xs text-[var(--ct-ink)]
                       focus:outline-none focus:border-blue-500 placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                   />
                   <button type="button" onClick={() => askAI()} disabled={!hasInvestigation || aiLoading} aria-label="Send question to investigation copilot" className="min-h-10 min-w-10 flex items-center justify-center p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
@@ -1635,7 +1636,7 @@ function InvestigateContent() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="rounded-lg border border-[#1e293b] bg-[#0a0e17] p-3">
+                  <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-[9px] uppercase tracking-widest text-slate-500">Forensic report · {caseData?.case_number}</div>
@@ -1646,7 +1647,7 @@ function InvestigateContent() {
                     <p className="mt-2 text-[10px] leading-relaxed text-slate-400">Structured from this investigation&apos;s facts, deterministic analysis, and labeled inferences.</p>
                   </div>
                   {report.sections?.map((s, i: number) => (
-                    <section key={`${s.section_type}-${s.title}-${i}`} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-3">
+                    <section key={`${s.section_type}-${s.title}-${i}`} className="bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg p-3">
                       <div className="flex items-center gap-2 mb-1.5">
                         <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium border
                           ${s.section_type === 'fact' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
@@ -1676,7 +1677,7 @@ function InvestigateContent() {
                     <button
                       key={i}
                       onClick={() => { setSelectedNode(d); setActiveTab('overview'); loadWhy(d.address); }}
-                      className="w-full text-left bg-[#0a0e17] border border-[#1e293b] rounded-lg p-3 hover:border-blue-500/30 transition-colors"
+                      className="w-full text-left bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg p-3 hover:border-[#8aa9a9] transition-colors"
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: getNodeColor(d) }} />
@@ -1693,6 +1694,6 @@ function InvestigateContent() {
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }

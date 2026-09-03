@@ -83,7 +83,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <main className="ct-page">
+    <main id="main-content" className="ct-page">
       <header className="ct-topbar sticky top-0 z-50 flex min-h-16 items-center justify-between gap-3 px-4 py-2 sm:px-6">
         <div className="flex items-center gap-3 min-w-0">
           <button

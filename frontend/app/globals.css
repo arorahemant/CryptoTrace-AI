@@ -48,7 +48,7 @@ html, body {
   padding: 0;
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: 'Hanken Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-hanken), 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -95,7 +95,7 @@ a {
 .ct-card {
   background: var(--ct-card);
   border: 1px solid var(--ct-outline-variant);
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: var(--ct-shadow-sm);
 }
 
@@ -118,7 +118,7 @@ a {
 .ct-button-secondary,
 .ct-icon-button {
   min-height: 44px;
-  border-radius: 7px;
+  border-radius: 4px;
   font-weight: 650;
 }
 
@@ -161,7 +161,7 @@ a {
   color: var(--ct-ink);
   background: var(--ct-card);
   border: 1px solid var(--ct-outline-variant);
-  border-radius: 7px;
+  border-radius: 4px;
 }
 
 .ct-field:hover:not(:disabled) {
@@ -189,7 +189,7 @@ a {
 
 .ct-state-panel {
   border: 1px dashed var(--ct-outline-variant);
-  border-radius: 10px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.55);
 }
 
@@ -197,7 +197,7 @@ a {
   color: #7d1717;
   background: var(--ct-danger-surface);
   border: 1px solid #e8aaa5;
-  border-radius: 7px;
+  border-radius: 4px;
 }
 
 .ct-modal-backdrop {
@@ -267,6 +267,45 @@ a {
 [data-forensic-theme] [class*="shadow-lg"] { box-shadow: 0 2px 4px rgba(26, 28, 25, 0.06) !important; }
 [data-forensic-theme] [class*="rounded-xl"],
 [data-forensic-theme] [class*="rounded-2xl"] { border-radius: 8px !important; }
+
+/* Skip-to-content accessibility link. Visually hidden until focused. */
+.ct-skip-link {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 9999;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--ct-primary);
+  border-radius: 4px;
+  text-decoration: none;
+  outline: none;
+}
+.ct-skip-link:focus {
+  top: 8px;
+  outline: 2px solid var(--ct-primary);
+  outline-offset: 2px;
+}
+
+/* Screen-reader-only utility. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* JetBrains Mono for monospaced data (wallet addresses, hashes). */
+.font-mono {
+  font-family: var(--font-jetbrains), 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
 
 [data-forensic-theme] input,
 [data-forensic-theme] textarea,

@@ -104,7 +104,7 @@ export default function ReporterPage() {
   };
 
   return (
-    <main className="ct-page">
+    <main id="main-content" className="ct-page">
       <header className="ct-topbar sticky top-0 z-50 flex min-h-16 items-center justify-between gap-3 px-4 py-2 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <div className="ct-brand-mark h-9 w-9 rounded-lg"><FileSearch className="h-4 w-4" aria-hidden="true" /></div>
@@ -144,7 +144,7 @@ export default function ReporterPage() {
             <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Reported wallet</span><input className="ct-field px-3 font-mono text-sm" value={wallet} onChange={(event) => setWallet(event.target.value)} required minLength={10} /></label>
             <label><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Blockchain</span><select className="ct-field px-3 text-sm" value={blockchain} onChange={(event) => setBlockchain(event.target.value)}><option value="demo">Demo Network</option><option value="ethereum">Ethereum</option><option value="bitcoin">Bitcoin</option><option value="polygon">Polygon</option><option value="bsc">BNB Smart Chain</option></select></label>
             <div className="flex items-end"><span className="w-full rounded-lg border border-[#d9c3af] bg-[var(--ct-warning-surface)] p-3 text-xs leading-5 text-[var(--ct-ink-muted)]">Demo Network uses deterministic demonstration data.</span></div>
-            <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">What happened? <span className="font-normal text-[var(--ct-ink-muted)]">(optional)</span></span><textarea className="ct-field min-h-24 resize-y px-3 py-2.5 text-sm" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} placeholder="Add context that may help an investigator review the report." /></label>
+            <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">What happened? <span className="font-normal text-[var(--ct-ink-muted)]">(optional)</span></span><textarea className="ct-field min-h-24 resize-y px-3 py-2.5 text-sm" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} placeholder="Add context that may help an investigator review the report." aria-describedby="description-counter" /><div id="description-counter" className="mt-1.5 text-right text-xs text-[var(--ct-ink-muted)]" aria-live="polite">{description.length} / 2,000 characters</div></label>
             <div className="sm:col-span-2"><button type="submit" disabled={submitting} className="ct-button-primary flex w-full items-center justify-center gap-2 px-4 py-2.5 text-sm disabled:opacity-50 sm:w-auto">{submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</> : 'Submit report'}</button></div>
           </form>
         </section>

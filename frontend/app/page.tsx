@@ -39,7 +39,7 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="ct-page ct-login-page flex items-center px-4 py-6 sm:px-8 sm:py-10">
+    <main id="main-content" className="ct-page ct-login-page flex items-center px-4 py-6 sm:px-8 sm:py-10">
       <div className="mx-auto grid w-full max-w-6xl overflow-hidden rounded-xl border border-[var(--ct-outline-variant)] bg-white shadow-[var(--ct-shadow-md)] lg:grid-cols-[1.12fr_0.88fr]">
         <section className="flex flex-col justify-between bg-[var(--ct-surface-low)] p-6 sm:p-10 lg:p-12" aria-labelledby="product-heading">
           <div>
