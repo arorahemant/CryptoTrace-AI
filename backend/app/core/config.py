@@ -32,11 +32,19 @@ def _is_unsafe_secret(value: str) -> bool:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
+    _LOCAL_CORS_ORIGINS = (
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    )
+
     # Application
     APP_NAME: str = "CryptoTrace AI"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
     API_PREFIX: str = "/api/v1"
+    # Comma-separated exact browser/native origins. Demo mode defaults to the
+    # local frontend; production must provide its deployed origin(s).
+    CORS_ORIGINS: Optional[str] = None
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://cryptotrace:cryptotrace@localhost:5432/cryptotrace"
@@ -80,6 +88,28 @@ class Settings(BaseSettings):
         else:
             self.SECRET_KEY = configured_secret
         return self
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Return the exact origins allowed to call the API."""
+        raw_origins = self.CORS_ORIGINS
+        if raw_origins is None:
+            if self.DEMO_MODE:
+                return list(self._LOCAL_CORS_ORIGINS)
+            raise ValueError(
+                "CORS_ORIGINS must be configured when DEMO_MODE=false"
+            )
+
+        origins = [
+            origin.strip().rstrip("/")
+            for origin in raw_origins.split(",")
+            if origin.strip()
+        ]
+        if "*" in origins:
+            raise ValueError(
+                "CORS_ORIGINS must contain explicit origins; '*' is incompatible with credentials"
+            )
+        return origins
 
 
 settings = Settings()
