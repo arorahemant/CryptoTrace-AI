@@ -139,6 +139,32 @@ def test_generic_postgresql_url_is_normalized_for_async_sqlalchemy(monkeypatch):
     assert _get_database_url().startswith("postgresql+asyncpg://")
 
 
+def test_demo_mode_defaults_to_sqlite_even_with_database_url(monkeypatch):
+    monkeypatch.setattr(settings, "DEMO_MODE", True)
+    monkeypatch.setattr(
+        settings,
+        "DATABASE_URL",
+        "postgresql://user:password@db.internal:5432/cryptotrace",
+    )
+    monkeypatch.delenv("USE_SQLITE", raising=False)
+
+    assert _get_database_url().startswith("sqlite+aiosqlite:///")
+
+
+def test_hosted_demo_requires_false_override_to_select_postgresql(monkeypatch):
+    monkeypatch.setattr(settings, "DEMO_MODE", True)
+    monkeypatch.setattr(
+        settings,
+        "DATABASE_URL",
+        "postgresql://user:password@db.internal:5432/cryptotrace",
+    )
+    monkeypatch.setenv("USE_SQLITE", "false")
+
+    assert _get_database_url() == (
+        "postgresql+asyncpg://user:password@db.internal:5432/cryptotrace"
+    )
+
+
 def test_production_rejects_explicit_sqlite_database_url(monkeypatch):
     monkeypatch.setattr(settings, "DEMO_MODE", False)
     monkeypatch.setattr(settings, "DATABASE_URL", "sqlite+aiosqlite:///unsafe-production.db")

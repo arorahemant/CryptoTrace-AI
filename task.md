@@ -145,3 +145,14 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Non-demo provider safety | COMPLETE | Startup refuses `DEMO_MODE=false` while the only implemented provider is `DemoProvider`; no live integration was added |
 | PostgreSQL migrations | BLOCKED | Startup still uses `Base.metadata.create_all`; Alembic configuration and migration history are absent, so the migration plan is documented but not implemented |
 | Capacitor impact | DOCUMENTED | Hosted frontend/API origin, WebView storage, native origin, and deep-link validation requirements are recorded; Capacitor remains uninitialized |
+
+## Hosted PostgreSQL reliability gate - 2026-09-03
+
+| Gate | Status | Evidence / limitation |
+|---|---|---|
+| Hosted frontend | AVAILABLE | `https://cryptotrace-frontend.onrender.com` responds over HTTPS; browser walkthrough remains unavailable in the current tool session |
+| Hosted backend | AVAILABLE | `https://cryptotrace-ai-z7hp.onrender.com` health, OpenAPI, CORS preflight, and versioned login were exercised successfully |
+| Hosted PostgreSQL resource | CONFIGURED / UNVERIFIED | Render resource `cryptotrace-postgres` and backend `DATABASE_URL` were supplied, but `DEMO_MODE=true` selects SQLite unless `USE_SQLITE=false` is explicit |
+| Staging schema bootstrap | PREPARED | Current `Base.metadata.create_all` can initialize a fresh staging schema without dropping or altering existing tables; PostgreSQL DDL compilation covers all 13 models, but no live PostgreSQL execution is claimed |
+| Migration history | NOT STARTED | Alembic is installed as a dependency but has no configuration or revisions; add a reviewed baseline before schema evolution or non-demo production |
+| Persistence / hosted E2E | BLOCKED | Requires `USE_SQLITE=false`, backend redeployment, a `backend: postgresql` startup log, hosted vertical-slice execution, and survival across a new Render service instance |

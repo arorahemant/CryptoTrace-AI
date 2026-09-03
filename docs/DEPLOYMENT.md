@@ -1,8 +1,8 @@
 # Staging deployment architecture
 
-This document describes the lowest-risk staging path for the current
-repository. It is a plan and configuration contract, not evidence that any
-service, domain, credential, database, or deployment exists.
+This document describes the lowest-risk staging path and configuration
+contract for the current repository. The hosted-service facts recorded below
+do not by themselves prove that the backend is using PostgreSQL.
 
 ## Recommendation
 
@@ -92,7 +92,7 @@ the current source. Backend keys must never be prefixed with
 | `DATABASE_URL` | Managed PostgreSQL URL | Required managed PostgreSQL URL | The runtime accepts generic `postgresql://` input and normalizes it to the asyncpg dialect. SQLite is not allowed when `DEMO_MODE=false`. |
 | `SECRET_KEY` | Random injected value recommended | Required random value, at least 32 characters | Never commit it. Demo mode can generate an ephemeral process key. |
 | `CORS_ORIGINS` | Exact frontend HTTPS origin | Exact frontend origin plus a verified native origin when needed | Comma-separated; wildcard and empty values are rejected. Do not add a Capacitor origin until the actual shell/origin is verified. |
-| `USE_SQLITE` | Unset if using managed Postgres | Unset/false | Explicit local/demo override only; rejected in non-demo mode. |
+| `USE_SQLITE` | Explicitly `false` with hosted PostgreSQL | Unset/false | `DEMO_MODE=true` defaults to SQLite even when `DATABASE_URL` exists; hosted demo staging must override that default. `true` is rejected in non-demo mode. |
 | `OPENAI_API_KEY` | Optional | Optional, if live LLM summaries are approved | Backend-only; no live call is currently verified. |
 | `AI_MODEL` | Optional | Optional | Used only by the configured LLM path. |
 | `ETHERSCAN_API_KEY` | Not used by current provider | Not sufficient by itself | Configuration field exists, but no live provider adapter consumes it. |
@@ -116,6 +116,14 @@ That is acceptable only as a temporary staging/demo convenience. There is no
 Alembic configuration or migration history in this repository, so production
 schema evolution is not yet safe to automate.
 
+For the current fresh staging gate, `create_all` is the lowest-risk bootstrap:
+it creates missing tables and indexes but does not alter, migrate, or drop an
+existing schema. Startup logs the selected SQLAlchemy dialect without logging
+the connection URL. A successful `backend: postgresql` schema-ready log plus a
+hosted persistence/redeploy test is required before marking PostgreSQL active.
+Do not use `create_all` as a substitute for migrations after the model schema
+begins evolving.
+
 Safest migration plan before non-demo production:
 
 1. Baseline the current schema against a disposable PostgreSQL database.
@@ -136,8 +144,8 @@ No migration rewrite is included in this checkpoint.
 1. Create a staging PostgreSQL database and keep its connection value in the
    provider secret store.
 2. Create the backend web service in the same region. Set `DEMO_MODE=true`,
-   `DATABASE_URL`, a random `SECRET_KEY`, `DEBUG=false`, and the exact planned
-   frontend origin in `CORS_ORIGINS`.
+   `USE_SQLITE=false`, `DATABASE_URL`, a random `SECRET_KEY`, `DEBUG=false`,
+   and the exact planned frontend origin in `CORS_ORIGINS`.
 3. Confirm the backend service starts and its health endpoint responds.
 4. Create the frontend Node web service and set
    `NEXT_PUBLIC_API_URL` to the actual backend HTTPS API base. This value must
@@ -173,6 +181,31 @@ document.
 
 ## Current status
 
-This repository contains no provider-specific deployment file, cloud
-credential, hosted URL, migration history, or deployment result. The staging
-architecture is documented only; external provisioning remains required.
+The following staging resources were supplied and their public services have
+responded over HTTPS:
+
+```text
+Frontend: https://cryptotrace-frontend.onrender.com
+Backend:  https://cryptotrace-ai-z7hp.onrender.com
+Postgres resource name: cryptotrace-postgres
+```
+
+The backend must have all of the following effective runtime configuration
+before the PostgreSQL reliability gate is run:
+
+```text
+DATABASE_URL=<cryptotrace-postgres internal connection URL; secret>
+USE_SQLITE=false
+DEMO_MODE=true
+DEBUG=false
+SECRET_KEY=<random value of at least 32 characters; secret>
+CORS_ORIGINS=https://cryptotrace-frontend.onrender.com
+PYTHON_VERSION=3.12.14
+```
+
+PostgreSQL remains unverified until a redeployed backend logs
+`Database schema ready (backend: postgresql)`, the hosted vertical slice is
+exercised, and the created case remains retrievable after another Render
+service instance is started. No Alembic configuration or migration history
+exists yet; the staging database currently uses the guarded `create_all`
+bootstrap described above.

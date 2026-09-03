@@ -36,9 +36,11 @@ async def lifespan(app: FastAPI):
 
     validate_runtime_mode()
 
-    # Create tables
+    # Bootstrap missing tables for the current staging/demo schema. The
+    # selected dialect is safe to log; the connection URL and credentials are
+    # intentionally never logged.
     await init_db()
-    logger.info("✅ Database tables created")
+    logger.info("✅ Database schema ready (backend: %s)", engine.dialect.name)
 
     # Seed known demo accounts only in demo mode. Production accounts must be
     # provisioned through a controlled operator workflow.
