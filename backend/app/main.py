@@ -29,11 +29,12 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("✅ Database tables created")
 
-    # Seed demo user if none exists
+    # Seed known demo accounts only in demo mode. Production accounts must be
+    # provisioned through a controlled operator workflow.
     async with async_session_factory() as session:
         from sqlalchemy import select
         result = await session.execute(select(User).limit(1))
-        if not result.scalars().first():
+        if settings.DEMO_MODE and not result.scalars().first():
             demo_user = User(
                 email="investigator@cryptotrace.ai",
                 username="investigator",
@@ -59,7 +60,7 @@ async def lifespan(app: FastAPI):
         # Ensure the RBAC foundation is complete even when an older demo DB
         # already contains the investigator/supervisor seed users.
         admin_result = await session.execute(select(User).where(User.username == "admin"))
-        if not admin_result.scalars().first():
+        if settings.DEMO_MODE and not admin_result.scalars().first():
             session.add(User(
                 email="admin@cryptotrace.ai",
                 username="admin",
