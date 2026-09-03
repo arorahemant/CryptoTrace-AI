@@ -55,10 +55,12 @@ interface GraphEdgeData {
 interface GraphResponse { nodes: GraphNodeData[]; edges: GraphEdgeData[]; primary_path: string[]; }
 interface FindingData {
   id?: string;
+  pattern_type?: string;
   pattern_name: string;
   description: string;
   severity: string;
   confidence: number;
+  trigger?: string;
   affected_wallets?: string[];
   supporting_transaction_ids?: string[];
   created_at?: string;
@@ -95,7 +97,7 @@ interface ReplayEvent {
   highlight_edges?: string[];
   cumulative_amount?: number;
 }
-interface CaseDetail { id: string; case_number: string; status: string; is_demo: boolean; reported_wallet: string; blockchain?: string; summary?: { risk_level?: string; total_wallets?: number; total_transactions?: number }; }
+interface CaseDetail { id: string; case_number: string; title: string; status: string; is_demo: boolean; reported_wallet: string; blockchain?: string; summary?: { risk_level?: string; total_wallets?: number; total_transactions?: number }; }
 interface WhyData { wallet_address: string; reasons: string[]; findings?: FindingData[]; }
 interface ReportSection { title: string; section_type: string; content: string; }
 interface InvestigationData {
@@ -130,6 +132,39 @@ function getRiskBadge(category: string | null): { bg: string; text: string } {
     low: { bg: 'bg-green-500/10 border-green-500/30', text: 'text-green-400' },
   };
   return map[category || 'low'] || map.low;
+}
+
+const severityRank: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+
+function getStrongestFinding(findings: FindingData[]): FindingData | null {
+  return [...findings].sort((left, right) => {
+    const severityDifference = (severityRank[right.severity] || 0) - (severityRank[left.severity] || 0);
+    return severityDifference || right.confidence - left.confidence;
+  })[0] || null;
+}
+
+function buildInvestigationNarrative(values: {
+  walletCount: number;
+  transactionCount: number;
+  intermediaryCount: number;
+  destinationCount: number;
+  maximumHop: number;
+  strongestFinding: FindingData | null;
+}): string {
+  const {
+    walletCount, transactionCount, intermediaryCount, destinationCount,
+    maximumHop, strongestFinding,
+  } = values;
+  const parts = [
+    `Analysis traced ${transactionCount} transaction${transactionCount === 1 ? '' : 's'} across ${walletCount} wallet${walletCount === 1 ? '' : 's'}`,
+    maximumHop > 0 ? `through ${maximumHop} hop${maximumHop === 1 ? '' : 's'}` : '',
+    `and identified ${intermediaryCount} intermediary wallet${intermediaryCount === 1 ? '' : 's'}`,
+    destinationCount > 0 ? `with ${destinationCount} observed destination${destinationCount === 1 ? '' : 's'}` : '',
+  ].filter(Boolean);
+  const findingSentence = strongestFinding
+    ? `The strongest detected pattern is “${strongestFinding.pattern_name}”.`
+    : 'No suspicious pattern finding is currently recorded.';
+  return `${parts.join(', ')}. ${findingSentence}`;
 }
 
 // ─── Main Page ────────────────────────────────────────────────
@@ -706,24 +741,33 @@ function InvestigateContent() {
   const suspiciousTransactionCount = transactions.filter((transaction) => transaction.is_suspicious).length;
   const linkedEvidenceCount = evidence.filter((item) => item.transaction_hash || item.finding_id).length;
   const riskCategory = (investigation?.risk?.overall || caseData?.summary?.risk_level || 'PENDING').toUpperCase();
+  const intermediaryCount = nodes.filter((node) => node.data.is_intermediary).length;
+  const destinationCount = nodes.filter((node) => node.data.is_destination).length;
+  const strongestFinding = getStrongestFinding(findings);
+  const investigationNarrative = buildInvestigationNarrative({
+    walletCount: nodes.length,
+    transactionCount: transactions.length,
+    intermediaryCount,
+    destinationCount,
+    maximumHop: traceHopCount,
+    strongestFinding,
+  });
 
   return (
-    <div className="ct-investigation-shell h-screen bg-[#0a0e17] flex flex-col overflow-hidden">
+    <div className="ct-investigation-shell flex h-screen flex-col overflow-hidden bg-[#0a0e17]">
       {/* ─── Top Bar ────────────────────────────────────────── */}
       <header className="ct-investigation-header h-12 border-b border-[#1e293b] bg-[#111827]/90 backdrop-blur-sm flex items-center px-4 justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => router.push('/dashboard')} aria-label="Back to case dashboard" className="min-h-10 min-w-10 flex items-center justify-center rounded hover:bg-[#1e293b] text-slate-400 hover:text-white">
+          <button type="button" onClick={() => router.push('/dashboard')} aria-label="Back to case dashboard" className="ct-icon-button flex items-center justify-center">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <div className="w-6 h-6 rounded bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+          <div className="ct-brand-mark h-7 w-7 rounded-md">
             <Shield className="w-3.5 h-3.5 text-white" />
           </div>
-          <span className="font-bold text-white text-sm">CryptoTrace AI</span>
+          <span className="text-sm font-bold text-white">CryptoTrace AI</span>
           <span className="text-slate-600">|</span>
           <span className="font-mono text-xs text-slate-400">{caseData?.case_number}</span>
-          <span className="max-w-32 truncate font-mono text-[10px] text-blue-300" title={caseData?.reported_wallet}>{caseData?.reported_wallet}</span>
-          <span className="text-[10px] uppercase text-slate-500">{caseData?.blockchain || 'network unknown'}</span>
-          <span className="text-[10px] uppercase text-slate-400">{caseData?.status}</span>
+          <span className="hidden max-w-48 truncate text-xs text-slate-400 md:inline" title={caseData.title}>{caseData.title}</span>
           <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${riskBadge.bg} ${riskBadge.text}`}>
             {(investigation?.risk?.overall || caseData?.summary?.risk_level || 'PENDING').toUpperCase()} RISK
           </span>
@@ -738,26 +782,25 @@ function InvestigateContent() {
             <button
               onClick={runInvestigation}
               disabled={investigating}
-              className="min-h-10 flex items-center gap-1.5 px-4 py-1.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg text-xs font-medium
-                hover:from-blue-500 hover:to-cyan-500 disabled:opacity-50 shadow-lg shadow-blue-500/20"
+              className="ct-button-primary flex items-center gap-1.5 px-4 py-1.5 text-xs disabled:opacity-50"
             >
               {investigating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
-              {investigating ? 'Investigating...' : 'INVESTIGATE'}
+              {investigating ? 'Investigating…' : 'Run investigation'}
             </button>
           ) : (
             <>
               <button onClick={startReplay}
                 className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-cyan-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
-                <Play className="w-3 h-3" /> REPLAY
+                <Play className="w-3 h-3" /> Replay
               </button>
               <button onClick={() => setActiveTab('ai')}
                 className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-purple-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
-                <MessageSquare className="w-3 h-3" /> ASK AI
+                <MessageSquare className="w-3 h-3" /> Ask Copilot
               </button>
               <button onClick={generateReport} disabled={generatingReport}
                 className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[#1e293b] text-green-400 rounded-lg text-xs font-medium hover:bg-[#2a3548] border border-[#2a3548]">
                 {generatingReport ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
-                REPORT
+                Report
               </button>
             </>
           )}
@@ -773,6 +816,35 @@ function InvestigateContent() {
         </div>
       )}
 
+      {hasInvestigation && (
+        <section className="ct-investigation-story shrink-0 border-b border-[var(--ct-outline-variant)] bg-white px-4 py-3" aria-labelledby="case-story-heading">
+          <div className="mx-auto grid max-w-[1600px] grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-[minmax(300px,1.8fr)_repeat(6,minmax(76px,0.5fr))] xl:items-stretch">
+            <div className="col-span-2 min-w-0 border-l-[3px] border-[var(--ct-primary)] pl-3 sm:col-span-3 xl:col-span-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 id="case-story-heading" className="text-sm font-bold text-[var(--ct-ink)]">What happened</h1>
+                <span className="ct-status-chip bg-[#edf3f3] text-[var(--ct-primary)]">Analysis</span>
+                {caseData.is_demo && <span className="ct-status-chip bg-[var(--ct-warning-surface)] text-[var(--risk-medium)]">Demo data</span>}
+              </div>
+              <p className="mt-1.5 max-w-3xl text-xs leading-5 text-[var(--ct-ink-muted)]">{investigationNarrative}</p>
+              <p className="mt-1 truncate font-mono text-[10px] text-[var(--ct-outline)]" title={caseData.reported_wallet}>Reported wallet · {caseData.reported_wallet}</p>
+            </div>
+            {[
+              { label: 'Case status', value: caseData.status.replaceAll('_', ' ') },
+              { label: 'Investigation', value: investigation?.status?.replaceAll('_', ' ') || 'results ready' },
+              { label: 'Risk level', value: riskCategory },
+              { label: 'Wallets', value: nodes.length },
+              { label: 'Transactions', value: transactions.length },
+              { label: 'Intermediaries', value: intermediaryCount },
+            ].map((metric) => (
+              <div key={metric.label} className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface-low)] px-3 py-2.5">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-ink-muted)]">{metric.label}</div>
+                <div className="mt-1 truncate text-sm font-bold capitalize text-[var(--ct-ink)]">{metric.value}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ─── Main Content ──────────────────────────────────── */}
       <div className="ct-investigation-main flex flex-1 overflow-hidden">
         {/* ─── Left Panel ──────────────────────────────────── */}
@@ -786,7 +858,7 @@ function InvestigateContent() {
               { id: 'findings', icon: AlertTriangle, label: 'Findings', count: findings.length },
               { id: 'evidence', icon: Bookmark, label: 'Evidence', count: evidence.length },
               { id: 'timeline', icon: Activity, label: 'Timeline', count: timeline.length },
-              { id: 'audit', icon: ClipboardList, label: 'Audit Log', count: auditEvents.length },
+              { id: 'audit', icon: ClipboardList, label: 'Audit', count: auditEvents.length },
               { id: 'ai', icon: MessageSquare, label: 'AI Copilot' },
               { id: 'report', icon: FileText, label: 'Report' },
             ].map((tab) => (
@@ -812,12 +884,12 @@ function InvestigateContent() {
                 onClick={() => setShowMoneyTrail(!showMoneyTrail)}
                 className={`w-full min-h-11 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold transition-all
                   ${showMoneyTrail
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                    : 'bg-blue-500/10 text-blue-400 border border-blue-500/30 hover:bg-blue-500/20'
+                    ? 'bg-[#124343] text-white border border-[#124343]'
+                    : 'bg-white text-[#124343] border border-[#8aa9a9] hover:bg-[#f4f4ef]'
                   }`}
               >
                 <Crosshair className="w-3.5 h-3.5" />
-                FOCUS MONEY TRAIL
+                Money movement
               </button>
             </div>
           )}
@@ -831,19 +903,18 @@ function InvestigateContent() {
                 <div className="w-20 h-20 rounded-2xl bg-[#111827] border border-[#1e293b] flex items-center justify-center mx-auto mb-4">
                   <Search className="w-10 h-10 text-slate-600" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Ready to Investigate</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">Ready to investigate</h3>
                 <p className="text-slate-400 text-sm mb-1">Wallet: <span className="font-mono text-blue-400">{caseData?.reported_wallet}</span></p>
-                <p className="text-slate-500 text-xs mb-6">Click INVESTIGATE to trace blockchain transactions</p>
+                <p className="text-slate-500 text-xs mb-6">Run the investigation to trace available blockchain transactions.</p>
                 <button
                   onClick={runInvestigation}
                   disabled={investigating}
-                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-medium text-sm
-                    shadow-xl shadow-blue-500/30 hover:from-blue-500 hover:to-cyan-500 disabled:opacity-50"
+                  className="ct-button-primary px-8 py-3 text-sm disabled:opacity-50"
                 >
                   {investigating ? (
-                    <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Running Investigation...</span>
+                    <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Running investigation…</span>
                   ) : (
-                    <span className="flex items-center gap-2"><Search className="w-4 h-4" /> INVESTIGATE</span>
+                    <span className="flex items-center gap-2"><Search className="w-4 h-4" /> Run investigation</span>
                   )}
                 </button>
               </div>
@@ -851,7 +922,7 @@ function InvestigateContent() {
           ) : (
             <div className="flex-1 relative" style={{ height: '100%' }}>
               <div className="absolute top-3 right-3 z-10 hidden sm:block rounded border border-[#2a3548] bg-[#111827]/95 px-3 py-2 shadow-xl">
-                <div className="text-[10px] uppercase tracking-widest text-slate-500 font-medium">Transaction flow topology</div>
+                <div className="text-[10px] uppercase tracking-widest text-slate-500 font-medium">How the money moved</div>
                 <div className="mt-1 text-[10px] text-slate-400 font-mono">{nodes.length} wallets · {edges.length} transfers</div>
               </div>
               <form
@@ -867,7 +938,7 @@ function InvestigateContent() {
                   className="w-36 bg-transparent px-2 py-1.5 text-[11px] text-white outline-none placeholder:text-slate-600"
                 />
                 <button type="submit" className="rounded-md bg-blue-500/15 px-2 py-1.5 text-[10px] font-medium text-blue-300 hover:bg-blue-500/25">
-                  FIND
+                  Find
                 </button>
               </form>
               {graphSearchMessage && (
@@ -1105,7 +1176,7 @@ function InvestigateContent() {
                 <p className="text-xs text-slate-500">No findings yet. Run investigation first.</p>
               ) : findings.map((f, i) => (
                 <div key={f.id || `${f.pattern_name}-${i}`} className="bg-[#0a0e17] border border-[#1e293b] rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-1.5">
+                  <div className="mb-3 flex items-center gap-2">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                     <span className="text-xs font-medium text-white">{f.pattern_name}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ml-auto
@@ -1113,14 +1184,25 @@ function InvestigateContent() {
                       {f.severity?.toUpperCase()}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">{f.description}</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
-                    <span className="px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">DETERMINISTIC ANALYSIS</span>
-                    <span className="text-slate-600">Confidence: {(f.confidence * 100).toFixed(0)}%</span>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">What happened</div>
+                      <p className="mt-1 text-[11px] leading-relaxed text-slate-300">{f.description}</p>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Why it matters</div>
+                      <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                        {f.trigger || `Deterministic analysis classified this pattern as ${f.severity} severity with ${(f.confidence * 100).toFixed(0)}% confidence.`}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                      <span className="px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">ANALYSIS</span>
+                      <span className="text-slate-600">Confidence {(f.confidence * 100).toFixed(0)}%</span>
+                    </div>
                   </div>
                   {(f.affected_wallets ?? []).length > 0 && (
                     <div className="mt-2 border-t border-[#1e293b] pt-2">
-                      <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">WHY / affected wallets</div>
+                      <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Next · explain a flagged wallet</div>
                       <div className="flex flex-wrap gap-1.5">
                         {(f.affected_wallets ?? []).slice(0, 4).map((address) => (
                           <button
@@ -1130,7 +1212,7 @@ function InvestigateContent() {
                             aria-label={`Explain why wallet ${address} was flagged`}
                             className="min-h-10 rounded border border-amber-500/30 px-2 py-1 font-mono text-[10px] text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/10"
                           >
-                            WHY {address.slice(0, 12)}…
+                            Explain {address.slice(0, 12)}…
                           </button>
                         ))}
                       </div>
@@ -1138,7 +1220,7 @@ function InvestigateContent() {
                   )}
                   {(f.supporting_transaction_ids ?? []).length > 0 && (
                     <div className="mt-2 border-t border-[#1e293b] pt-2">
-                      <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Supporting transactions</div>
+                      <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Transactions supporting this finding</div>
                       <div className="flex flex-wrap gap-1.5">
                         {(f.supporting_transaction_ids ?? []).slice(0, 4).map((hash) => (
                           <button
@@ -1147,7 +1229,7 @@ function InvestigateContent() {
                             onClick={() => selectTransactionByHash(hash)}
                             className="min-h-10 rounded border border-[#2a3548] px-2 py-1 font-mono text-[10px] text-blue-400 hover:border-blue-500/40 hover:text-blue-300"
                           >
-                            TX {hash.slice(0, 12)}…
+                            View TX {hash.slice(0, 12)}…
                           </button>
                         ))}
                       </div>
