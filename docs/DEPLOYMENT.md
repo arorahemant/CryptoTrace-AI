@@ -45,6 +45,14 @@ The repository is a monorepo with two independent services.
 | FastAPI backend | `backend` | `pip install -r requirements.txt` | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` | `/api/v1/health` |
 | PostgreSQL | managed datastore | provider-managed | provider-managed | provider-managed |
 
+For the Render backend service, set the service-level environment variable
+`PYTHON_VERSION=3.12.14`. This is the authoritative Python runtime pin. Render
+documents the environment variable as the highest-precedence mechanism and
+requires a fully qualified version. Do not also add `.python-version`: Render
+documents that file at the repository root, while this monorepo service uses
+`backend` as its isolated Root Directory. The service-level variable avoids
+an ambiguous file lookup and applies directly to this Python Web Service.
+
 The frontend must be a dynamic Node web service. Do not configure it as a
 static site or enable `output: "export"`; `/investigate/[id]` is currently a
 dynamic route and the app has not been refactored or verified for static
@@ -78,6 +86,7 @@ the current source. Backend keys must never be prefixed with
 
 | Variable | Staging requirement | Production requirement | Notes |
 |---|---|---|---|
+| `PYTHON_VERSION` | `3.12.14` | `3.12.14` until the dependency stack is deliberately revalidated | Render service-level runtime pin; non-secret and fully qualified. |
 | `DEMO_MODE` | Explicitly `true` | `false` only after live provider integration | Demo accounts/data are allowed only in staging/demo. Non-demo startup currently refuses to run because only `DemoProvider` exists. |
 | `DEBUG` | `false` recommended | `false` | Production configuration rejects `true`. |
 | `DATABASE_URL` | Managed PostgreSQL URL | Required managed PostgreSQL URL | The runtime accepts generic `postgresql://` input and normalizes it to the asyncpg dialect. SQLite is not allowed when `DEMO_MODE=false`. |
