@@ -63,7 +63,7 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 
 | Gate | Status | Evidence / limitation |
 |---|---|---|
-| Android build toolchain | BLOCKED | Java 17 is available, but Android SDK, Gradle, ADB, and an emulator/device are not available; no APK has been generated or claimed |
+| Android build toolchain | BLOCKED | Java 17 and Android SDK/API 34 emulator files are present, but Gradle and Android Studio are unavailable, adb execution is blocked, and no emulator/device validation has occurred |
 | Mobile shell dependency | NOT STARTED | Capacitor was evaluated but not committed because no hosted frontend URL or Android build/validation environment is available; the existing web frontend remains the functional source |
 | Hosted frontend/API | BLOCKED | No hosted HTTPS endpoint or deployment credentials are configured; production API client now fails closed without `NEXT_PUBLIC_API_URL` |
 | Mobile workflow validation | BLOCKED | No real phone/emulator and no browser session are available for login-to-report validation |
@@ -122,7 +122,7 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Frontend consumption model | PARTIAL | The app uses a dynamic Next.js route and is not configured for static export; packaging therefore requires a hosted HTTPS frontend origin or a separately verified static-export decision |
 | Production API origin | PARTIAL | `NEXT_PUBLIC_API_URL` is explicit and production-fail-closed; no hosted HTTPS API endpoint is configured |
 | Mobile web readiness | PARTIAL | Responsive layouts, touch-sized primary controls, responsive replay controls, modal overflow handling, and larger mobile ReactFlow controls are code/build verified; no real device validation |
-| Android build toolchain | BLOCKED | Java 17 is available, but Capacitor packages, Android SDK, Gradle, ADB, and emulator/device are unavailable |
+| Android build toolchain | BLOCKED | Java 17 and Android SDK/API 34 emulator files are present, but Capacitor packages, Gradle, and Android Studio are unavailable, adb execution is blocked, and no emulator/device validation has occurred |
 | Hosted frontend/API and CORS origin | BLOCKED | No hosted frontend/API URL or deployment credentials are available; production CORS must explicitly allow the eventual HTTPS frontend/native origin |
 
 ## Review-surface hardening - 2026-09-03
@@ -133,3 +133,15 @@ No P1 item above justified a code change in this pass. The P0 gate remains green
 | Report pre-investigation state | COMPLETE | Report generation is unavailable until an investigation exists; generated output uses a case-scoped document header and retains structured fact/analysis/inference sections |
 | Timeline empty state | COMPLETE | Timeline exposes an event count and a clear pre-investigation empty state rather than rendering a blank panel |
 | Data-honesty copy | COMPLETE | Login footer identifies the SIH problem context instead of suggesting an institutional affiliation; demo/analysis/inference labels remain explicit |
+
+## Staging deployment architecture - 2026-09-03
+
+| Gate | Status | Evidence / limitation |
+|---|---|---|
+| Recommended staging topology | DOCUMENTED | `docs/DEPLOYMENT.md` recommends one Render project with dynamic Next.js, FastAPI, and managed PostgreSQL services; no service has been provisioned |
+| Dynamic Next.js hosting | PREPARED | Existing `/investigate/[id]` remains dynamic; deployment must use a Node web service, not static export |
+| Production configuration validation | IMPROVED | Non-demo settings now require non-local `DATABASE_URL`, exact non-empty `CORS_ORIGINS`, a safe `SECRET_KEY`, and `DEBUG=false`; frontend still requires explicit `NEXT_PUBLIC_API_URL` in hosted builds |
+| PostgreSQL URL compatibility | PREPARED | Generic `postgresql://` and `postgres://` values normalize to the asyncpg SQLAlchemy dialect; actual PostgreSQL connectivity remains unverified |
+| Non-demo provider safety | COMPLETE | Startup refuses `DEMO_MODE=false` while the only implemented provider is `DemoProvider`; no live integration was added |
+| PostgreSQL migrations | BLOCKED | Startup still uses `Base.metadata.create_all`; Alembic configuration and migration history are absent, so the migration plan is documented but not implemented |
+| Capacitor impact | DOCUMENTED | Hosted frontend/API origin, WebView storage, native origin, and deep-link validation requirements are recorded; Capacitor remains uninitialized |

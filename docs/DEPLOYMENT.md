@@ -1,0 +1,169 @@
+# Staging deployment architecture
+
+This document describes the lowest-risk staging path for the current
+repository. It is a plan and configuration contract, not evidence that any
+service, domain, credential, database, or deployment exists.
+
+## Recommendation
+
+Use one Render project for the staging components:
+
+```text
+Browser / future Capacitor client
+        ↓ HTTPS
+Render Node web service: existing Next.js frontend
+        ↓ HTTPS + exact CORS allowlist
+Render Python web service: existing FastAPI backend
+        ↓ private PostgreSQL connection
+Render managed PostgreSQL database
+```
+
+This is recommended for staging because one platform can host the dynamic
+Next.js web service, FastAPI web service, and managed PostgreSQL in the same
+region. Render documents Next.js web-service deployment with `build` and
+`start` commands, supports FastAPI web services, provides managed Postgres,
+and gives services HTTPS `onrender.com` URLs. See the [Next.js deployment
+guide](https://render.com/docs/deploy-nextjs-app), [web-service
+documentation](https://render.com/docs/web-services), and [multi-service
+architecture guide](https://render.com/docs/multi-service-architecture).
+
+Vercel for the frontend plus Render or Railway for the backend/database is
+also technically viable. Vercel has first-party Next.js App Router/SSR
+support and environment-variable management, but it introduces a second
+platform and an additional cross-origin boundary for this staging milestone.
+Railway can host Next.js, FastAPI, and PostgreSQL in one project as well. The
+single-Render route is therefore the simpler operational starting point, not
+a claim that Render is the final provider choice.
+
+## Service configuration
+
+The repository is a monorepo with two independent services.
+
+| Service | Root directory | Build command | Start command | Health check |
+|---|---|---|---|---|
+| Next.js frontend | `frontend` | `npm ci && npm run build` | `npm run start` | `/` |
+| FastAPI backend | `backend` | `pip install -r requirements.txt` | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` | `/api/v1/health` |
+| PostgreSQL | managed datastore | provider-managed | provider-managed | provider-managed |
+
+The frontend must be a dynamic Node web service. Do not configure it as a
+static site or enable `output: "export"`; `/investigate/[id]` is currently a
+dynamic route and the app has not been refactored or verified for static
+export.
+
+Expected values after a real staging service is created are placeholders only:
+
+```text
+Frontend URL: https://<frontend-service-name>.onrender.com
+Backend URL:  https://<backend-service-name>.onrender.com
+API base:     https://<backend-service-name>.onrender.com/api/v1
+Database:     provider-internal PostgreSQL connection string
+```
+
+No value above is a real project URL.
+
+## Environment contract
+
+### Frontend service
+
+| Variable | Staging value | Secret? | Notes |
+|---|---|---:|---|
+| `NEXT_PUBLIC_API_URL` | `https://<backend-service-name>.onrender.com/api/v1` | No | Required at build time for hosted/installed clients; it is intentionally public in the browser bundle. |
+| `NODE_ENV` | Provider/Next-managed | No | Do not use it to store credentials. |
+
+There are no other application-specific frontend environment variables in
+the current source. Backend keys must never be prefixed with
+`NEXT_PUBLIC_`.
+
+### Backend service
+
+| Variable | Staging requirement | Production requirement | Notes |
+|---|---|---|---|
+| `DEMO_MODE` | Explicitly `true` | `false` only after live provider integration | Demo accounts/data are allowed only in staging/demo. Non-demo startup currently refuses to run because only `DemoProvider` exists. |
+| `DEBUG` | `false` recommended | `false` | Production configuration rejects `true`. |
+| `DATABASE_URL` | Managed PostgreSQL URL | Required managed PostgreSQL URL | The runtime accepts generic `postgresql://` input and normalizes it to the asyncpg dialect. SQLite is not allowed when `DEMO_MODE=false`. |
+| `SECRET_KEY` | Random injected value recommended | Required random value, at least 32 characters | Never commit it. Demo mode can generate an ephemeral process key. |
+| `CORS_ORIGINS` | Exact frontend HTTPS origin | Exact frontend origin plus a verified native origin when needed | Comma-separated; wildcard and empty values are rejected. Do not add a Capacitor origin until the actual shell/origin is verified. |
+| `USE_SQLITE` | Unset if using managed Postgres | Unset/false | Explicit local/demo override only; rejected in non-demo mode. |
+| `OPENAI_API_KEY` | Optional | Optional, if live LLM summaries are approved | Backend-only; no live call is currently verified. |
+| `AI_MODEL` | Optional | Optional | Used only by the configured LLM path. |
+| `ETHERSCAN_API_KEY` | Not used by current provider | Not sufficient by itself | Configuration field exists, but no live provider adapter consumes it. |
+| `BLOCKCHAIN_RPC_URL` | Not used by current provider | Not sufficient by itself | Configuration field exists, but no live provider adapter consumes it. |
+| `MAX_TRACE_HOPS` | Default acceptable | Review before live traffic | Existing bounded tracing control. |
+| `MAX_TRACE_TRANSACTIONS` | Default acceptable | Review before live traffic | Existing bounded tracing control. |
+| `TRACE_TIME_WINDOW_HOURS` | Default acceptable | Review before live traffic | Existing tracing control. |
+| `MIN_TRACE_AMOUNT` | Default acceptable | Review before live traffic | Existing tracing control. |
+
+`APP_NAME`, `APP_VERSION`, `API_PREFIX`, `ACCESS_TOKEN_EXPIRE_MINUTES`, and
+`ALGORITHM` have code defaults. `DATABASE_SYNC_URL` is retained as a future
+migration-tooling placeholder but is not used by the current async runtime.
+
+## Database readiness boundary
+
+The SQLAlchemy models are PostgreSQL-compatible at the dialect level, and the
+async engine uses `asyncpg` with connection-pool health settings. The current
+startup path still calls `Base.metadata.create_all` through `init_db()`.
+
+That is acceptable only as a temporary staging/demo convenience. There is no
+Alembic configuration or migration history in this repository, so production
+schema evolution is not yet safe to automate.
+
+Safest migration plan before non-demo production:
+
+1. Baseline the current schema against a disposable PostgreSQL database.
+2. Add Alembic configuration and one reviewed initial migration matching the
+   current models; do not fabricate a migration history for an unknown
+   database.
+3. Run the migration against a fresh staging PostgreSQL database and execute
+   the full backend/P0 suite against PostgreSQL.
+4. Add a provider-supported pre-deploy migration command.
+5. Use additive, backward-compatible migrations before switching application
+   instances, with backups and a tested rollback procedure.
+6. Remove or disable automatic `create_all` for the non-demo deployment path.
+
+No migration rewrite is included in this checkpoint.
+
+## Deployment order
+
+1. Create a staging PostgreSQL database and keep its connection value in the
+   provider secret store.
+2. Create the backend web service in the same region. Set `DEMO_MODE=true`,
+   `DATABASE_URL`, a random `SECRET_KEY`, `DEBUG=false`, and the exact planned
+   frontend origin in `CORS_ORIGINS`.
+3. Confirm the backend service starts and its health endpoint responds.
+4. Create the frontend Node web service and set
+   `NEXT_PUBLIC_API_URL` to the actual backend HTTPS API base. This value must
+   be present before the frontend build.
+5. Replace any temporary CORS value with the actual frontend HTTPS origin and
+   redeploy the backend.
+6. Run hosted login, case creation, investigation, authorization, report,
+   and API smoke checks. Treat all records as explicitly demo data.
+7. Only after staging is stable, plan PostgreSQL migrations, live provider
+   integration, production secrets, and the later Capacitor shell.
+
+## Rollback
+
+Application rollback is the previously successful frontend/backend commit or
+provider deployment. Roll back the backend and frontend together when an API
+contract change is involved. Database rollback must use a tested backup or a
+forward-fix migration; do not assume that reverting application code reverts a
+schema. Until migrations exist, do not perform destructive production schema
+changes through startup `create_all`.
+
+## Capacitor impact
+
+The future Android client should reuse this hosted frontend rather than create
+another UI. Its WebView will use the same HTTPS frontend and API. The current
+JWT is a Bearer token persisted in WebView `localStorage`, not a cookie, so the
+actual Capacitor shell must verify storage persistence, logout, deep links, and
+the final WebView origin. The final native origin must be added to
+`CORS_ORIGINS` only after the package configuration is selected and tested.
+
+Dynamic routes, asset loading, reports, and React Flow interaction should be
+validated in the real shell later. No native project is created by this
+document.
+
+## Current status
+
+This repository contains no provider-specific deployment file, cloud
+credential, hosted URL, migration history, or deployment result. The staging
+architecture is documented only; external provisioning remains required.

@@ -20,10 +20,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def validate_runtime_mode():
+    """Refuse non-demo startup until a live provider is actually configured."""
+    if not settings.DEMO_MODE:
+        raise RuntimeError(
+            "A non-demo blockchain provider is not configured; keep DEMO_MODE=true "
+            "until live provider integration is implemented and verified"
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events."""
     logger.info("🚀 Starting CryptoTrace AI Backend...")
+
+    validate_runtime_mode()
 
     # Create tables
     await init_db()

@@ -15,6 +15,7 @@ from app.api.cases import _get_authorized_case, _get_user, router
 from app.core.config import Settings, settings
 from app.core.database import Base, _get_database_url
 from app.core.security import create_access_token, decode_access_token
+from app.main import validate_runtime_mode
 from app.models.models import (
     Case,
     CaseStatus,
@@ -56,13 +57,86 @@ def test_demo_secret_is_ephemeral_and_jwt_round_trip_works():
 
 def test_valid_production_secret_is_accepted_without_embedding_a_secret():
     configured = "prod-key-" + ("a9" * 24)
-    settings = Settings(DEMO_MODE=False, SECRET_KEY=configured, _env_file=None)
+    settings = Settings(
+        DEMO_MODE=False,
+        DEBUG=False,
+        SECRET_KEY=configured,
+        DATABASE_URL="postgresql+asyncpg://user:password@db.internal:5432/cryptotrace",
+        CORS_ORIGINS="https://frontend.example",
+        _env_file=None,
+    )
 
     assert settings.SECRET_KEY == configured
     source = Path(__file__).parent / "app" / "core" / "config.py"
     source_text = source.read_text(encoding="utf-8")
     assert 'SECRET_KEY: str = "' not in source_text
     assert 'SECRET_KEY: Optional[str] = "' not in source_text
+
+
+def test_production_requires_database_and_cors_configuration():
+    configured = "prod-key-" + ("a9" * 24)
+
+    with pytest.raises(ValidationError, match="DATABASE_URL"):
+        Settings(
+            DEMO_MODE=False,
+            DEBUG=False,
+            SECRET_KEY=configured,
+            CORS_ORIGINS="https://frontend.example",
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError, match="CORS_ORIGINS"):
+        Settings(
+            DEMO_MODE=False,
+            DEBUG=False,
+            SECRET_KEY=configured,
+            DATABASE_URL="postgresql+asyncpg://user:password@db.internal:5432/cryptotrace",
+            CORS_ORIGINS="",
+            _env_file=None,
+        )
+
+
+def test_production_rejects_local_database_and_debug_mode():
+    configured = "prod-key-" + ("a9" * 24)
+    common = {
+        "DEMO_MODE": False,
+        "SECRET_KEY": configured,
+        "CORS_ORIGINS": "https://frontend.example",
+        "_env_file": None,
+    }
+
+    with pytest.raises(ValidationError, match="localhost"):
+        Settings(
+            **common,
+            DEBUG=False,
+            DATABASE_URL="postgresql+asyncpg://user:password@localhost:5432/cryptotrace",
+        )
+
+    with pytest.raises(ValidationError, match="DEBUG"):
+        Settings(
+            **common,
+            DEBUG=True,
+            DATABASE_URL="postgresql+asyncpg://user:password@db.internal:5432/cryptotrace",
+        )
+
+
+def test_production_runtime_refuses_demo_provider(monkeypatch):
+    monkeypatch.setattr(settings, "DEMO_MODE", False)
+
+    with pytest.raises(RuntimeError, match="non-demo blockchain provider"):
+        validate_runtime_mode()
+
+
+def test_generic_postgresql_url_is_normalized_for_async_sqlalchemy(monkeypatch):
+    monkeypatch.setattr(settings, "DEMO_MODE", False)
+    monkeypatch.setattr(
+        settings,
+        "DATABASE_URL",
+        "postgresql://user:password@db.internal:5432/cryptotrace",
+    )
+    monkeypatch.delenv("USE_SQLITE", raising=False)
+
+    assert _get_database_url().startswith("postgresql+asyncpg://")
 
 
 def test_production_rejects_explicit_sqlite_database_url(monkeypatch):

@@ -4,6 +4,7 @@ Loads settings from environment variables with sensible defaults.
 """
 import secrets
 from typing import Optional
+from urllib.parse import urlparse
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +19,7 @@ _UNSAFE_SECRET_PREFIXES = (
     "development",
     "test-secret",
 )
+_LOCAL_DATABASE_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 def _is_unsafe_secret(value: str) -> bool:
@@ -40,15 +42,19 @@ class Settings(BaseSettings):
     # Application
     APP_NAME: str = "CryptoTrace AI"
     APP_VERSION: str = "0.1.0"
-    DEBUG: bool = True
+    DEBUG: bool = False
     API_PREFIX: str = "/api/v1"
     # Comma-separated exact browser/native origins. Demo mode defaults to the
     # local frontend; production must provide its deployed origin(s).
     CORS_ORIGINS: Optional[str] = None
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://cryptotrace:cryptotrace@localhost:5432/cryptotrace"
-    DATABASE_SYNC_URL: str = "postgresql://cryptotrace:cryptotrace@localhost:5432/cryptotrace"
+    # Demo mode may omit DATABASE_URL and use the explicit SQLite fallback.
+    # Hosted non-demo mode must inject a PostgreSQL URL.
+    DATABASE_URL: Optional[str] = None
+    # Reserved for future synchronous migration tooling; the current runtime
+    # uses only DATABASE_URL through the async SQLAlchemy engine.
+    DATABASE_SYNC_URL: Optional[str] = None
 
     # Authentication
     # A production signing key must be injected through the environment (or a
@@ -77,7 +83,7 @@ class Settings(BaseSettings):
     DEMO_MODE: bool = True
 
     @model_validator(mode="after")
-    def validate_secret_key(self):
+    def validate_production_configuration(self):
         configured_secret = (self.SECRET_KEY or "").strip()
         if _is_unsafe_secret(configured_secret):
             if not self.DEMO_MODE:
@@ -87,6 +93,29 @@ class Settings(BaseSettings):
             self.SECRET_KEY = secrets.token_urlsafe(32)
         else:
             self.SECRET_KEY = configured_secret
+
+        if not self.DEMO_MODE:
+            database_url = (self.DATABASE_URL or "").strip()
+            if not database_url:
+                raise ValueError(
+                    "DATABASE_URL must be configured when DEMO_MODE=false"
+                )
+
+            parsed_database_url = urlparse(database_url)
+            if parsed_database_url.hostname in _LOCAL_DATABASE_HOSTS:
+                raise ValueError(
+                    "DATABASE_URL must not target localhost when DEMO_MODE=false"
+                )
+            if "sqlite" in database_url.lower():
+                raise ValueError(
+                    "DATABASE_URL must use PostgreSQL when DEMO_MODE=false"
+                )
+            if self.DEBUG:
+                raise ValueError("DEBUG must be false when DEMO_MODE=false")
+
+            # Evaluate the property during settings construction so hosted
+            # startup fails before the FastAPI app is created.
+            self.cors_origins
         return self
 
     @property
@@ -108,6 +137,10 @@ class Settings(BaseSettings):
         if "*" in origins:
             raise ValueError(
                 "CORS_ORIGINS must contain explicit origins; '*' is incompatible with credentials"
+            )
+        if not origins:
+            raise ValueError(
+                "CORS_ORIGINS must contain at least one explicit origin"
             )
         return origins
 

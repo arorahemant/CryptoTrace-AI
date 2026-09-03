@@ -4,6 +4,7 @@ Async SQLAlchemy engine and session management.
 Supports PostgreSQL (production) and SQLite (development/prototype).
 """
 import os
+from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import event
@@ -18,8 +19,13 @@ def _get_database_url() -> str:
     configured PostgreSQL URL and fails closed if a SQLite URL or override is
     supplied accidentally.
     """
-    url = settings.DATABASE_URL
+    url = (settings.DATABASE_URL or "").strip()
     sqlite_override = os.environ.get("USE_SQLITE", "").lower() == "true"
+
+    if not url and not settings.DEMO_MODE:
+        raise RuntimeError(
+            "DATABASE_URL must be configured when DEMO_MODE=false"
+        )
 
     if not settings.DEMO_MODE and ("sqlite" in url.lower() or sqlite_override):
         raise RuntimeError(
@@ -39,6 +45,12 @@ def _get_database_url() -> str:
             "cryptotrace.db",
         )
         return f"sqlite+aiosqlite:///{db_path}"
+
+    # Managed PostgreSQL services commonly expose a generic PostgreSQL URL.
+    # SQLAlchemy's async engine needs the asyncpg dialect explicitly.
+    parsed = urlparse(url)
+    if parsed.scheme in {"postgres", "postgresql"}:
+        return f"postgresql+asyncpg://{url.split('://', 1)[1]}"
 
     return url
 
