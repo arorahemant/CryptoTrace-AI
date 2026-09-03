@@ -841,7 +841,7 @@ function InvestigateContent() {
           <div className="mx-auto grid max-w-[1600px] grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-[minmax(300px,1.8fr)_repeat(6,minmax(76px,0.5fr))] xl:items-stretch">
             <div className="col-span-2 min-w-0 border-l-[3px] border-[var(--ct-primary)] pl-3 sm:col-span-3 xl:col-span-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 id="case-story-heading" className="text-sm font-bold text-[var(--ct-ink)]">What happened</h1>
+                <h2 id="case-story-heading" className="text-sm font-bold text-[var(--ct-ink)]">What happened</h2>
                 <span className="ct-status-chip bg-[#edf3f3] text-[var(--ct-primary)]">Analysis</span>
                 {caseData.is_demo && <span className="ct-status-chip bg-[var(--ct-warning-surface)] text-[var(--risk-medium)]">Demo data</span>}
               </div>
