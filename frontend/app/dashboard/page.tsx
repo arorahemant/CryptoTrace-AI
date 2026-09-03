@@ -9,10 +9,10 @@ import {
 } from 'lucide-react';
 
 const statusColors: Record<string, string> = {
-  new: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-  investigating: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  review: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-  completed: 'bg-green-500/10 text-green-400 border-green-500/20',
+  new: 'bg-[#edf3f3] text-[#124343] border-[#b4c8c7]',
+  investigating: 'bg-[#fff4ed] text-[#734934] border-[#d9b49d]',
+  review: 'bg-[#f5f0eb] text-[#58331f] border-[#d3bdaa]',
+  completed: 'bg-[#edf8f1] text-[#28634c] border-[#a9cdb8]',
 };
 
 const statIconColors: Record<string, string> = {
@@ -55,7 +55,7 @@ export default function DashboardPage() {
       setLoadError('');
     } catch (err) {
       console.error('Failed to load cases', err);
-      setLoadError(err instanceof Error ? err.message : 'Unable to load cases.');
+      setLoadError('Cases could not be loaded. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -77,24 +77,24 @@ export default function DashboardPage() {
   };
 
   return (
-    <main className="ct-dashboard-page min-h-screen bg-[#0a0e17]">
+    <main className="ct-page ct-dashboard-page">
       {/* Top Bar */}
-      <header className="min-h-14 border-b border-[#1e293b] bg-[#111827] flex items-center px-4 sm:px-6 py-2 justify-between gap-3 sticky top-0 z-50">
+      <header className="ct-topbar sticky top-0 z-50 flex min-h-16 items-center justify-between gap-3 px-4 py-2 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-[#124343] flex items-center justify-center">
+          <div className="ct-brand-mark h-9 w-9 rounded-lg">
             <Shield className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-white text-sm tracking-tight">CryptoTrace AI</span>
-          <span className="text-[10px] px-2 py-0.5 bg-cyan-500/10 text-cyan-400 rounded-full font-medium border border-cyan-500/20">
+          <span className="text-sm font-bold tracking-tight text-[var(--ct-ink)]">CryptoTrace AI</span>
+          <span className="ct-status-chip hidden bg-[#edf3f3] text-[var(--ct-primary)] sm:inline-flex">
             {(user?.role || 'investigator').toUpperCase()}
           </span>
         </div>
         <div className="flex items-center gap-4">
-          <span className="hidden sm:inline text-sm text-slate-400">{user?.full_name || 'Investigator'}</span>
-          <button onClick={() => router.push('/settings')} aria-label="Open settings" className="min-h-10 min-w-10 p-1.5 rounded hover:bg-[#1e293b] transition-colors text-slate-400 hover:text-white">
+          <span className="hidden text-sm text-[var(--ct-ink-muted)] sm:inline">{user?.full_name || 'Investigator'}</span>
+          <button onClick={() => router.push('/settings')} aria-label="Open settings" className="ct-icon-button flex items-center justify-center">
             <SettingsIcon className="w-4 h-4" />
           </button>
-          <button onClick={handleLogout} aria-label="Sign out" className="min-h-10 min-w-10 p-1.5 rounded hover:bg-[#1e293b] transition-colors text-slate-400 hover:text-white">
+          <button onClick={handleLogout} aria-label="Sign out" className="ct-icon-button flex items-center justify-center">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
@@ -104,14 +104,13 @@ export default function DashboardPage() {
         {/* Dashboard Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-white">Case Dashboard</h1>
-            <p className="text-slate-400 text-sm mt-1">Manage and investigate fraud-linked cryptocurrency cases</p>
+            <p className="ct-eyebrow mb-1">Investigation workspace</p>
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--ct-ink)]">Your cases</h1>
+            <p className="mt-1 text-sm text-[var(--ct-ink-muted)]">Open an active case or start with one reported wallet.</p>
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="min-h-11 flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white
-              rounded-lg font-medium text-sm hover:from-blue-500 hover:to-cyan-500 transition-all
-              shadow-lg shadow-blue-500/20"
+            className="ct-button-primary flex items-center gap-2 px-4 py-2.5 text-sm"
           >
             <Plus className="w-4 h-4" />
             New Case
@@ -126,43 +125,43 @@ export default function DashboardPage() {
             { label: 'Review', value: cases.filter(c => c.status === 'review').length, icon: Clock, color: 'purple' },
             { label: 'Completed', value: cases.filter(c => c.status === 'completed').length, icon: CheckCircle, color: 'green' },
           ].map((stat) => (
-            <div key={stat.label} className="bg-[#111827] border border-[#1e293b] rounded-xl p-4">
+            <div key={stat.label} className="ct-card p-4">
               <div className="flex items-center justify-between mb-2">
                 <stat.icon className={`w-5 h-5 ${statIconColors[stat.color] || statIconColors.blue}`} />
               </div>
-              <div className="text-2xl font-bold text-white">{stat.value}</div>
-              <div className="text-xs text-slate-400 mt-1">{stat.label}</div>
+              <div className="text-2xl font-bold text-[var(--ct-ink)]">{stat.value}</div>
+              <div className="mt-1 text-xs text-[var(--ct-ink-muted)]">{stat.label}</div>
             </div>
           ))}
         </div>
 
         {/* Cases List */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />
-            <span className="ml-3 text-slate-400">Loading cases...</span>
+          <div role="status" className="ct-state-panel flex items-center justify-center py-16">
+            <Loader2 className="h-5 w-5 animate-spin text-[var(--ct-primary)]" />
+            <span className="ml-3 text-sm text-[var(--ct-ink-muted)]">Loading your cases…</span>
           </div>
         ) : loadError ? (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-8 h-8 text-red-400" />
+          <div className="ct-state-panel px-5 py-14 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg border border-[#e8aaa5] bg-[var(--ct-danger-surface)]">
+              <Shield className="h-5 w-5 text-[var(--risk-high)]" />
             </div>
-            <h3 className="text-white font-semibold mb-2">Unable to load cases</h3>
-            <p className="text-red-300 text-sm mb-6">{loadError}</p>
-            <button onClick={() => void loadCases()} className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm">
+            <h3 className="mb-2 font-semibold text-[var(--ct-ink)]">Cases are temporarily unavailable</h3>
+            <p className="mb-6 text-sm text-[var(--ct-ink-muted)]">{loadError}</p>
+            <button onClick={() => void loadCases()} className="ct-button-primary px-6 py-2.5 text-sm">
               Retry
             </button>
           </div>
         ) : cases.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 rounded-2xl bg-[#111827] border border-[#1e293b] flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-8 h-8 text-slate-600" />
+          <div className="ct-state-panel px-5 py-14 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg border border-[var(--ct-outline-variant)] bg-white">
+              <Shield className="h-5 w-5 text-[var(--ct-ink-muted)]" />
             </div>
-            <h3 className="text-white font-semibold mb-2">No Cases Yet</h3>
-            <p className="text-slate-400 text-sm mb-6">Create your first investigation case to get started</p>
+            <h3 className="mb-2 font-semibold text-[var(--ct-ink)]">No cases yet</h3>
+            <p className="mb-6 text-sm text-[var(--ct-ink-muted)]">Create a case to begin tracing a reported wallet.</p>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="min-h-11 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg font-medium text-sm"
+              className="ct-button-primary px-6 py-2.5 text-sm"
             >
               Create First Case
             </button>
@@ -182,13 +181,12 @@ export default function DashboardPage() {
                     router.push(`/investigate/${c.id}`);
                   }
                 }}
-                className="bg-[#111827] border border-[#1e293b] rounded-xl p-5 cursor-pointer
-                  hover:border-blue-500/30 hover:bg-[#141c2b] transition-all duration-200 group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="ct-card ct-card-interactive group cursor-pointer p-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ct-primary)]"
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-[#1e293b] flex items-center justify-center">
-                      <Shield className="w-5 h-5 text-blue-400" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--ct-surface-high)]">
+                      <Shield className="h-5 w-5 text-[var(--ct-primary)]" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-1">
@@ -202,8 +200,8 @@ export default function DashboardPage() {
                           </span>
                         )}
                       </div>
-                      <h3 className="text-white font-medium truncate">{c.title}</h3>
-                      <p className="text-slate-500 text-xs mt-0.5 font-mono truncate">{c.reported_wallet}</p>
+                      <h3 className="truncate font-medium text-[var(--ct-ink)]">{c.title}</h3>
+                      <p className="mt-0.5 truncate font-mono text-xs text-[var(--ct-ink-muted)]">{c.reported_wallet}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 pl-14 sm:pl-0">
@@ -213,7 +211,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="text-xs text-slate-600 mt-0.5">{c.blockchain}</div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-blue-400 transition-colors" />
+                    <ChevronRight className="h-4 w-4 text-[var(--ct-outline)] group-hover:text-[var(--ct-primary)]" />
                   </div>
                 </div>
               </div>
@@ -261,25 +259,26 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
       });
       onCreated(data);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create case');
+      console.error('Case creation failed', err);
+      setError('The case could not be created. Check the wallet details and try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+    <div className="ct-modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="wallet-intake-title"
         aria-describedby="wallet-intake-description"
-        className="bg-[#111827] border border-[#1e293b] rounded w-full max-w-lg max-h-[90vh] overflow-y-auto mx-0 sm:mx-4 p-5 sm:p-6 shadow-2xl animate-fade-in"
+        className="ct-card mx-0 max-h-[90dvh] w-full max-w-lg overflow-y-auto p-5 shadow-[var(--ct-shadow-md)] animate-fade-in sm:mx-4 sm:p-6"
       >
         <div className="flex items-start justify-between gap-4 mb-1">
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-blue-400 font-medium mb-1">Wallet intake</div>
-            <h2 id="wallet-intake-title" className="text-lg font-bold text-white">Create New Case</h2>
+            <div className="ct-eyebrow mb-1">Wallet intake</div>
+            <h2 id="wallet-intake-title" className="text-lg font-bold text-[var(--ct-ink)]">Create a case</h2>
           </div>
           {blockchain === 'demo' && (
             <span className="shrink-0 text-[10px] px-2 py-1 bg-amber-500/10 text-amber-400 rounded border border-amber-500/20 font-medium">
@@ -287,7 +286,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
             </span>
           )}
         </div>
-        <p id="wallet-intake-description" className="text-slate-500 text-sm mb-6">Start a case from one reported wallet. Address validation and investigation scope are enforced by the backend.</p>
+        <p id="wallet-intake-description" className="mb-6 text-sm leading-6 text-[var(--ct-ink-muted)]">Start with one reported wallet. CryptoTrace validates the address and keeps the investigation within this case.</p>
 
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
@@ -297,8 +296,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-4 py-2.5 bg-[#0a0e17] border border-[#2a3548] rounded-lg text-sm text-white
-                focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+              className="ct-field px-4 py-2.5 text-sm"
               required
             />
           </div>
@@ -313,8 +311,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
               type="text"
               value={wallet}
               onChange={(e) => setWallet(e.target.value)}
-              className="w-full px-4 py-2.5 bg-[#0a0e17] border border-[#2a3548] rounded-lg text-sm text-white font-mono
-                focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+              className="ct-field px-4 py-2.5 font-mono text-sm"
               placeholder="0x..."
               required
             />
@@ -328,8 +325,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
                 id="wallet-intake-blockchain-input"
                 value={blockchain}
                 onChange={(e) => setBlockchain(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#0a0e17] border border-[#2a3548] rounded-lg text-sm text-white
-                  focus:outline-none focus:border-blue-500"
+                className="ct-field px-4 py-2.5 text-sm"
               >
                 <option value="demo">Demo Network</option>
                 <option value="ethereum">Ethereum</option>
@@ -345,8 +341,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#0a0e17] border border-[#2a3548] rounded-lg text-sm text-white
-                  focus:outline-none focus:border-blue-500"
+                className="ct-field px-4 py-2.5 text-sm"
               />
             </div>
           </div>
@@ -358,26 +353,24 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="w-full px-4 py-2.5 bg-[#0a0e17] border border-[#2a3548] rounded-lg text-sm text-white
-                focus:outline-none focus:border-blue-500 resize-none"
+              className="ct-field resize-none px-4 py-2.5 text-sm"
             />
           </div>
 
           {error && (
-            <div role="alert" className="px-4 py-2 bg-red-500/10 border border-red-500/20 rounded">
-              <p className="text-red-400 text-sm">{error}</p>
+            <div role="alert" className="ct-error-panel px-4 py-3">
+              <p className="text-sm">{error}</p>
             </div>
           )}
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
-              className="flex-1 min-h-11 py-2.5 border border-[#2a3548] rounded text-slate-400 text-sm hover:bg-[#1e293b] transition-colors">
+              className="ct-button-secondary flex-1 px-4 py-2.5 text-sm">
               Cancel
             </button>
             <button type="submit" disabled={loading}
-              className="flex-1 min-h-11 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded text-sm font-medium
-                disabled:opacity-50 shadow-lg shadow-blue-500/20">
-              {loading ? 'Creating...' : 'Create Case'}
+              className="ct-button-primary flex-1 px-4 py-2.5 text-sm disabled:opacity-50">
+              {loading ? 'Creating…' : 'Create case'}
             </button>
           </div>
         </form>

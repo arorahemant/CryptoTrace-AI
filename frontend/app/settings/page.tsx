@@ -48,27 +48,27 @@ export default function SettingsPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0a0e17]">
-      <header className="min-h-14 border-b border-[#1e293b] bg-[#111827] flex items-center justify-between gap-3 px-4 sm:px-6 py-2 sticky top-0 z-50">
+    <main className="ct-page">
+      <header className="ct-topbar sticky top-0 z-50 flex min-h-16 items-center justify-between gap-3 px-4 py-2 sm:px-6">
         <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
             onClick={() => router.push('/dashboard')}
             aria-label="Back to case dashboard"
-            className="min-h-10 min-w-10 flex items-center justify-center rounded text-slate-400 hover:bg-[#1e293b] hover:text-white"
+            className="ct-icon-button flex items-center justify-center"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="w-8 h-8 rounded bg-[#124343] flex items-center justify-center">
+          <div className="ct-brand-mark h-9 w-9 rounded-lg">
             <Shield className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-white text-sm tracking-tight truncate">CryptoTrace AI</span>
+          <span className="truncate text-sm font-bold tracking-tight text-[var(--ct-ink)]">CryptoTrace AI</span>
         </div>
         <button
           type="button"
           onClick={handleLogout}
           aria-label="Sign out"
-          className="min-h-10 min-w-10 flex items-center justify-center rounded text-slate-400 hover:bg-[#1e293b] hover:text-white"
+          className="ct-icon-button flex items-center justify-center"
         >
           <LogOut className="w-4 h-4" />
         </button>
@@ -82,24 +82,24 @@ export default function SettingsPage() {
             <span className="text-blue-400">Settings</span>
           </div>
           <div className="flex items-start gap-3">
-            <SettingsIcon className="w-6 h-6 text-blue-400 mt-1" />
+            <SettingsIcon className="mt-1 h-6 w-6 text-[var(--ct-primary)]" />
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white">Platform Settings</h1>
-              <p className="text-slate-400 text-sm mt-1">Review investigator account, session posture, and data provenance guidance.</p>
+              <h1 className="text-2xl font-bold tracking-tight text-[var(--ct-ink)] sm:text-3xl">Account &amp; workspace</h1>
+              <p className="mt-1 text-sm text-[var(--ct-ink-muted)]">Review your persisted account identity, access safeguards, and data provenance guidance.</p>
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <section className="bg-[#111827] border border-[#1e293b] rounded-xl p-5">
-            <div className="flex items-center gap-2 border-b border-[#1e293b] pb-3 mb-5">
-              <Shield className="w-4 h-4 text-blue-400" />
-              <h2 className="text-sm font-semibold text-white">Investigator Account</h2>
+          <section className="ct-card p-5">
+            <div className="mb-5 flex items-center gap-2 border-b border-[var(--ct-outline-variant)] pb-3">
+              <Shield className="h-4 w-4 text-[var(--ct-primary)]" />
+              <h2 className="text-sm font-semibold text-[var(--ct-ink)]">Authenticated account</h2>
             </div>
             <dl className="space-y-4">
               <div>
                 <dt className="text-[10px] uppercase tracking-widest text-slate-500">Full name</dt>
-                <dd className="text-sm text-white mt-1">{user?.full_name || 'Investigator'}</dd>
+                <dd className="mt-1 text-sm text-[var(--ct-ink)]">{user?.full_name || 'Name unavailable'}</dd>
               </div>
               <div>
                 <dt className="text-[10px] uppercase tracking-widest text-slate-500">Username</dt>
@@ -107,15 +107,15 @@ export default function SettingsPage() {
               </div>
               <div>
                 <dt className="text-[10px] uppercase tracking-widest text-slate-500">Role</dt>
-                <dd className="text-sm text-white mt-1">{(user?.role || 'investigator').toUpperCase()}</dd>
+                <dd className="mt-1 text-sm text-[var(--ct-ink)]">{user?.role ? user.role.replaceAll('_', ' ').toUpperCase() : 'Unavailable'}</dd>
               </div>
             </dl>
           </section>
 
-          <section className="bg-[#111827] border border-[#1e293b] rounded-xl p-5">
-            <div className="flex items-center gap-2 border-b border-[#1e293b] pb-3 mb-5">
+          <section className="ct-card p-5">
+            <div className="mb-5 flex items-center gap-2 border-b border-[var(--ct-outline-variant)] pb-3">
               <LockKeyhole className="w-4 h-4 text-green-400" />
-              <h2 className="text-sm font-semibold text-white">Security &amp; Access</h2>
+              <h2 className="text-sm font-semibold text-[var(--ct-ink)]">Security &amp; access</h2>
             </div>
             <div className="space-y-3">
               {[
@@ -123,7 +123,7 @@ export default function SettingsPage() {
                 'Case access is checked per request',
                 'Provider credentials remain server-side',
               ].map((item) => (
-                <div key={item} className="flex items-start gap-2 text-xs text-slate-300">
+                <div key={item} className="flex items-start gap-2 text-xs text-[var(--ct-ink-muted)]">
                   <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
                   <span>{item}</span>
                 </div>
@@ -132,10 +132,10 @@ export default function SettingsPage() {
             <p className="text-[10px] text-slate-500 mt-5">Never share access tokens or investigation records outside the authorized case workflow.</p>
           </section>
 
-          <section className="bg-[#111827] border border-[#1e293b] rounded-xl p-5">
-            <div className="flex items-center gap-2 border-b border-[#1e293b] pb-3 mb-5">
+          <section className="ct-card p-5">
+            <div className="mb-5 flex items-center gap-2 border-b border-[var(--ct-outline-variant)] pb-3">
               <Database className="w-4 h-4 text-amber-400" />
-              <h2 className="text-sm font-semibold text-white">Data &amp; Environment</h2>
+              <h2 className="text-sm font-semibold text-[var(--ct-ink)]">Data &amp; environment</h2>
             </div>
             <div className="space-y-3 text-xs">
               <div className="flex items-center justify-between gap-3">
@@ -150,14 +150,14 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="bg-[#111827] border border-[#1e293b] rounded-xl p-5">
-            <div className="flex items-center gap-2 border-b border-[#1e293b] pb-3 mb-5">
-              <Palette className="w-4 h-4 text-purple-400" />
-              <h2 className="text-sm font-semibold text-white">Application Preferences</h2>
+          <section className="ct-card p-5">
+            <div className="mb-5 flex items-center gap-2 border-b border-[var(--ct-outline-variant)] pb-3">
+              <Palette className="h-4 w-4 text-[var(--accent-purple)]" />
+              <h2 className="text-sm font-semibold text-[var(--ct-ink)]">Visual language</h2>
             </div>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm text-white">Institutional forensic theme</div>
+                <div className="text-sm text-[var(--ct-ink)]">Institutional forensic theme</div>
                 <div className="text-[10px] text-slate-500 mt-1">Warm neutral surfaces, graphite text, restrained semantic colors</div>
               </div>
               <span className="text-[10px] px-2 py-1 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">ACTIVE</span>
@@ -169,9 +169,9 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={() => router.push('/dashboard')}
-            className="min-h-11 rounded border border-[#2a3548] px-4 text-sm text-slate-300 hover:bg-[#1e293b] hover:text-white"
+            className="ct-button-secondary px-4 text-sm"
           >
-            RETURN TO CASES
+            Return to cases
           </button>
         </div>
       </div>

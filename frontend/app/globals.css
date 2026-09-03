@@ -32,6 +32,11 @@
   --ct-primary-container: #d2e2eb;
   --ct-outline: #707978;
   --ct-outline-variant: #c0c8c7;
+  --ct-danger-surface: #fff1ef;
+  --ct-warning-surface: #fff4ed;
+  --ct-success-surface: #edf8f1;
+  --ct-shadow-sm: 0 1px 2px rgba(26, 28, 25, 0.06);
+  --ct-shadow-md: 0 8px 24px rgba(26, 28, 25, 0.08);
 }
 
 * {
@@ -46,6 +51,158 @@ html, body {
   font-family: 'Hanken Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  transition: color 160ms ease, background-color 160ms ease,
+    border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+/* Shared product primitives. New and progressively migrated screens use
+ * semantic classes instead of carrying the prototype palette forward. */
+.ct-page {
+  min-height: 100dvh;
+  background: var(--ct-surface);
+  color: var(--ct-ink);
+}
+
+.ct-topbar {
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid var(--ct-outline-variant);
+  box-shadow: var(--ct-shadow-sm);
+  backdrop-filter: blur(10px);
+}
+
+.ct-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--ct-primary);
+  border: 1px solid #0d3535;
+  box-shadow: var(--ct-shadow-sm);
+}
+
+.ct-card {
+  background: var(--ct-card);
+  border: 1px solid var(--ct-outline-variant);
+  border-radius: 10px;
+  box-shadow: var(--ct-shadow-sm);
+}
+
+.ct-card-interactive:hover {
+  background: #fbfcfa;
+  border-color: #829594;
+  box-shadow: 0 4px 14px rgba(26, 28, 25, 0.08);
+}
+
+.ct-eyebrow {
+  color: var(--ct-primary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.ct-button-primary,
+.ct-button-secondary,
+.ct-icon-button {
+  min-height: 44px;
+  border-radius: 7px;
+  font-weight: 650;
+}
+
+.ct-button-primary {
+  color: #fff;
+  background: var(--ct-primary);
+  border: 1px solid var(--ct-primary);
+  box-shadow: var(--ct-shadow-sm);
+}
+
+.ct-button-primary:hover:not(:disabled) {
+  background: #0d3939;
+  border-color: #0d3939;
+  box-shadow: 0 3px 10px rgba(18, 67, 67, 0.18);
+}
+
+.ct-button-secondary {
+  color: var(--ct-ink);
+  background: var(--ct-card);
+  border: 1px solid var(--ct-outline-variant);
+}
+
+.ct-button-secondary:hover:not(:disabled),
+.ct-icon-button:hover:not(:disabled) {
+  color: var(--ct-primary);
+  background: var(--ct-surface-low);
+  border-color: #829594;
+}
+
+.ct-icon-button {
+  min-width: 44px;
+  color: var(--ct-ink-muted);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.ct-field {
+  width: 100%;
+  min-height: 44px;
+  color: var(--ct-ink);
+  background: var(--ct-card);
+  border: 1px solid var(--ct-outline-variant);
+  border-radius: 7px;
+}
+
+.ct-field:hover:not(:disabled) {
+  border-color: #8b9998;
+}
+
+.ct-field:focus {
+  border-color: var(--ct-primary);
+  outline: 3px solid rgba(18, 67, 67, 0.14);
+  outline-offset: 1px;
+}
+
+.ct-status-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ct-outline-variant);
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.ct-state-panel {
+  border: 1px dashed var(--ct-outline-variant);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.ct-error-panel {
+  color: #7d1717;
+  background: var(--ct-danger-surface);
+  border: 1px solid #e8aaa5;
+  border-radius: 7px;
+}
+
+.ct-modal-backdrop {
+  background: rgba(22, 28, 27, 0.56);
+  backdrop-filter: blur(3px);
 }
 
 /*
@@ -182,11 +339,6 @@ html, body {
   to { opacity: 1; transform: translateX(0); }
 }
 
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 4px rgba(59, 130, 246, 0.3); }
-  50% { box-shadow: 0 0 12px rgba(59, 130, 246, 0.6); }
-}
-
 @keyframes trace-flow {
   0% { stroke-dashoffset: 20; }
   100% { stroke-dashoffset: 0; }
@@ -198,10 +350,6 @@ html, body {
 
 .animate-slide-in {
   animation: slideInRight 0.3s ease-out forwards;
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
 }
 
 /* Investigation workspace responsive structure. */
