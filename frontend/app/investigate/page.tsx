@@ -1297,7 +1297,7 @@ function InvestigateContent() {
                   </section>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <button type="button" onClick={() => void createActionRequest('preservation_request')} disabled={!actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-bold text-[var(--ct-primary)] disabled:cursor-not-allowed disabled:opacity-40">{actionLoading ? 'Preparing…' : 'PRESERVE EVIDENCE'}</button>
-                    <button type="button" onClick={() => void createActionRequest('freeze_request')} disabled={!actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded bg-[var(--ct-primary)] px-3 text-[10px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">PREPARE FREEZE REQUEST</button>
+                    <button type="button" onClick={() => void createActionRequest('freeze_request')} disabled={!actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded bg-[var(--ct-primary)] px-3 text-[10px] font-bold text-[#ffffff] disabled:cursor-not-allowed disabled:opacity-40">PREPARE FREEZE REQUEST</button>
                   </div>
                   {actionReadiness.evidence_ids.length === 0 && <p className="text-[10px] text-amber-400">No supporting evidence is available for a request.</p>}
                 </>
