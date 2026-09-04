@@ -16,6 +16,9 @@ interface ReporterSubmission {
   title: string;
   reported_wallet: string;
   blockchain: string;
+  asset: string;
+  analysis_status: string;
+  analysis_message: string;
   status: string;
   status_label: string;
   submitted_at: string;
@@ -23,6 +26,15 @@ interface ReporterSubmission {
   next_step: string;
   assigned_investigator?: { display_name: string; role_title: string } | null;
 }
+
+const networkOptions = [
+  { value: 'demo', label: 'Demo Network', assets: [{ value: 'ETH', label: 'ETH' }], capability: 'analysis_available', message: 'Analysis available using deterministic demonstration data.' },
+  { value: 'ethereum', label: 'Ethereum', assets: [{ value: 'ETH', label: 'ETH' }, { value: 'USDT', label: 'USDT' }, { value: 'USDC', label: 'USDC' }], capability: 'analysis_not_connected', message: 'Report accepted. Live analysis is not connected for Ethereum.' },
+  { value: 'bitcoin', label: 'Bitcoin', assets: [{ value: 'BTC', label: 'BTC' }], capability: 'analysis_not_connected', message: 'Report accepted. Live analysis is not connected for Bitcoin.' },
+  { value: 'tron', label: 'Tron', assets: [{ value: 'TRX', label: 'TRX' }, { value: 'USDT', label: 'USDT' }], capability: 'analysis_not_connected', message: 'Report accepted. Live analysis is not connected for Tron.' },
+  { value: 'polygon', label: 'Polygon', assets: [{ value: 'POL', label: 'POL / MATIC' }, { value: 'USDT', label: 'USDT' }, { value: 'USDC', label: 'USDC' }], capability: 'analysis_not_connected', message: 'Report accepted. Live analysis is not connected for Polygon.' },
+  { value: 'bsc', label: 'BNB Smart Chain', assets: [{ value: 'BNB', label: 'BNB' }, { value: 'USDT', label: 'USDT' }, { value: 'USDC', label: 'USDC' }], capability: 'analysis_not_connected', message: 'Report accepted. Live analysis is not connected for BNB Smart Chain.' },
+] as const;
 
 const statusStyle: Record<string, string> = {
   report_received: 'border-[#b4c8c7] bg-[#edf3f3] text-[#124343]',
@@ -47,7 +59,9 @@ export default function ReporterPage() {
   const [title, setTitle] = useState('Suspicious wallet report');
   const [wallet, setWallet] = useState('0xReported001');
   const [blockchain, setBlockchain] = useState('demo');
+  const [asset, setAsset] = useState('ETH');
   const [description, setDescription] = useState('');
+  const selectedNetwork = networkOptions.find((option) => option.value === blockchain) || networkOptions[0];
 
   const loadSubmissions = useCallback(async () => {
     try {
@@ -91,6 +105,7 @@ export default function ReporterPage() {
         title,
         reported_wallet: wallet,
         blockchain,
+        asset,
         description: description || undefined,
       });
       setSubmissions((current) => [submission, ...current]);
@@ -142,9 +157,10 @@ export default function ReporterPage() {
           </div>
           <form onSubmit={submitReport} className="grid gap-4 sm:grid-cols-2">
             <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Report title</span><input className="ct-field px-3 text-sm" value={title} onChange={(event) => setTitle(event.target.value)} required minLength={3} /></label>
-            <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Reported wallet</span><input className="ct-field px-3 font-mono text-sm" value={wallet} onChange={(event) => setWallet(event.target.value)} required minLength={10} /></label>
-            <label><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Blockchain</span><select className="ct-field px-3 text-sm" value={blockchain} onChange={(event) => setBlockchain(event.target.value)}><option value="demo">Demo Network</option><option value="ethereum">Ethereum</option><option value="bitcoin">Bitcoin</option><option value="polygon">Polygon</option><option value="bsc">BNB Smart Chain</option></select></label>
-            <div className="flex items-end"><span className="w-full rounded-lg border border-[#d9c3af] bg-[var(--ct-warning-surface)] p-3 text-xs leading-5 text-[var(--ct-ink-muted)]">Demo Network uses deterministic demonstration data.</span></div>
+            <label><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Network / chain</span><select className="ct-field px-3 text-sm" value={blockchain} onChange={(event) => { const next = networkOptions.find((option) => option.value === event.target.value) || networkOptions[0]; setBlockchain(next.value); setAsset(next.assets[0].value); setWallet(next.value === 'demo' ? '0xReported001' : ''); }} aria-label="Network or chain">{networkOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Asset / currency</span><select className="ct-field px-3 text-sm" value={asset} onChange={(event) => setAsset(event.target.value)}>{selectedNetwork.assets.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Wallet address</span><input className="ct-field px-3 font-mono text-sm" value={wallet} onChange={(event) => setWallet(event.target.value)} required minLength={10} placeholder={blockchain === 'demo' ? 'Demo wallet address' : 'Paste the wallet address'} /></label>
+            <div className="sm:col-span-2 rounded-lg border border-[#d9c3af] bg-[var(--ct-warning-surface)] p-3 text-xs leading-5 text-[var(--ct-ink-muted)]"><div className="font-semibold text-[var(--ct-ink)]">{selectedNetwork.capability === 'analysis_available' ? 'Analysis available' : 'Analysis provider not connected'}</div><div className="mt-1">{selectedNetwork.message}</div>{selectedNetwork.capability === 'analysis_available' && <div className="mt-1">This is DEMO DATA for demonstration only.</div>}</div>
             <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">What happened? <span className="font-normal text-[var(--ct-ink-muted)]">(optional)</span></span><textarea className="ct-field min-h-24 resize-y px-3 py-2.5 text-sm" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} placeholder="Add context that may help an investigator review the report." aria-describedby="description-counter" /><div id="description-counter" className="mt-1.5 text-right text-xs text-[var(--ct-ink-muted)]" aria-live="polite">{description.length} / 2,000 characters</div></label>
             <div className="sm:col-span-2"><button type="submit" disabled={submitting} className="ct-button-primary flex w-full items-center justify-center gap-2 px-4 py-2.5 text-sm disabled:opacity-50 sm:w-auto">{submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</> : 'Submit report'}</button></div>
           </form>
@@ -161,11 +177,12 @@ export default function ReporterPage() {
               {submissions.map((submission) => (
                 <article key={submission.id} className="ct-card p-4 sm:p-5">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0"><div className="font-mono text-[10px] text-[var(--ct-outline)]">{submission.reference_number}</div><h3 className="mt-1 font-semibold text-[var(--ct-ink)]">{submission.title}</h3><p className="mt-1 break-all font-mono text-xs text-[var(--ct-ink-muted)]">{submission.reported_wallet}</p></div>
+                    <div className="min-w-0"><div className="font-mono text-[10px] text-[var(--ct-outline)]">{submission.reference_number}</div><h3 className="mt-1 font-semibold text-[var(--ct-ink)]">{submission.title}</h3><p className="mt-1 break-all font-mono text-xs text-[var(--ct-ink-muted)]">{submission.reported_wallet}</p><p className="mt-2 text-xs font-semibold text-[var(--ct-ink)]">{submission.blockchain} · {submission.asset}</p></div>
                     <span className={`ct-status-chip self-start ${statusStyle[submission.status] || statusStyle.report_received}`}>{submission.status_label}</span>
                   </div>
                   <div className="mt-4 grid gap-3 border-t border-[var(--ct-outline-variant)] pt-4 sm:grid-cols-2">
-                    <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">What happens next</div><p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">{submission.next_step}</p></div>
+                     <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">Analysis status</div><p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">{submission.analysis_message}</p></div>
+                     <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">What happens next</div><p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">{submission.next_step}</p></div>
                     <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">Accountability</div>{submission.assigned_investigator ? <div className="mt-1"><div className="text-sm font-semibold text-[var(--ct-ink)]">{submission.assigned_investigator.display_name}</div><div className="text-xs text-[var(--ct-ink-muted)]">{submission.assigned_investigator.role_title}</div></div> : <p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">Approved investigator details are not available for display.</p>}</div>
                   </div>
                   <div className="mt-3 text-[10px] text-[var(--ct-outline)]">Submitted {new Date(submission.submitted_at).toLocaleString()} · Last status update {new Date(submission.last_status_update).toLocaleString()}</div>

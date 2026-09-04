@@ -20,6 +20,7 @@ class UserRoleSchema(str, Enum):
 
 class CaseStatusSchema(str, Enum):
     NEW = "new"
+    ACCEPTED = "accepted"
     INVESTIGATING = "investigating"
     REVIEW = "review"
     COMPLETED = "completed"
@@ -28,6 +29,7 @@ class CaseStatusSchema(str, Enum):
 class BlockchainSchema(str, Enum):
     ETHEREUM = "ethereum"
     BITCOIN = "bitcoin"
+    TRON = "tron"
     POLYGON = "polygon"
     BSC = "bsc"
     DEMO = "demo"
@@ -113,6 +115,7 @@ class CaseCreate(BaseModel):
     description: Optional[str] = None
     reported_wallet: str = Field(..., min_length=10, max_length=255)
     blockchain: BlockchainSchema = BlockchainSchema.ETHEREUM
+    asset: Optional[str] = Field(default=None, max_length=50)
     incident_date: Optional[datetime] = None
     reported_amount: Optional[float] = None
     notes: Optional[str] = None
@@ -127,6 +130,10 @@ class CaseResponse(BaseModel):
     description: Optional[str]
     reported_wallet: str
     blockchain: BlockchainSchema
+    asset: Optional[str] = None
+    source_submission_reference: Optional[str] = None
+    analysis_status: str = "analysis_not_connected"
+    analysis_message: str = "Analysis provider status is unavailable."
     status: CaseStatusSchema
     incident_date: Optional[datetime]
     reported_amount: Optional[float]
@@ -147,6 +154,7 @@ class ReporterSubmissionCreate(BaseModel):
     title: str = Field(..., min_length=3, max_length=255)
     reported_wallet: str = Field(..., min_length=10, max_length=255)
     blockchain: BlockchainSchema = BlockchainSchema.ETHEREUM
+    asset: Optional[str] = Field(default=None, max_length=50)
     description: Optional[str] = Field(default=None, max_length=2000)
 
 
@@ -161,6 +169,9 @@ class ReporterSubmissionResponse(BaseModel):
     title: str
     reported_wallet: str
     blockchain: BlockchainSchema
+    asset: str
+    analysis_status: str
+    analysis_message: str
     status: str
     status_label: str
     submitted_at: datetime

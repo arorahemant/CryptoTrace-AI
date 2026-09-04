@@ -36,6 +36,7 @@ class UserRole(str, enum.Enum):
 
 class CaseStatus(str, enum.Enum):
     NEW = "new"
+    ACCEPTED = "accepted"
     INVESTIGATING = "investigating"
     REVIEW = "review"
     COMPLETED = "completed"
@@ -72,6 +73,7 @@ class Severity(str, enum.Enum):
 class Blockchain(str, enum.Enum):
     ETHEREUM = "ethereum"
     BITCOIN = "bitcoin"
+    TRON = "tron"
     POLYGON = "polygon"
     BSC = "bsc"
     DEMO = "demo"
@@ -164,6 +166,8 @@ class Case(Base):
     description = Column(Text, nullable=True)
     reported_wallet = Column(String(255), nullable=False)
     blockchain = Column(Enum(Blockchain), nullable=False, default=Blockchain.ETHEREUM)
+    asset = Column(String(50), nullable=True)
+    source_submission_reference = Column(String(50), nullable=True)
     status = Column(Enum(CaseStatus), nullable=False, default=CaseStatus.NEW)
     incident_date = Column(DateTime(timezone=True), nullable=True)
     reported_amount = Column(Float, nullable=True)
@@ -215,6 +219,7 @@ class ReporterSubmission(Base):
     title = Column(String(255), nullable=False)
     reported_wallet = Column(String(255), nullable=False)
     blockchain = Column(String(50), nullable=False)
+    asset = Column(String(50), nullable=True)
     description = Column(Text, nullable=True)
     status = Column(String(50), nullable=False, default="report_received")
     submitted_at = Column(DateTime(timezone=True), default=utcnow)

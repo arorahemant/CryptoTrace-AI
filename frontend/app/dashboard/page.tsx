@@ -10,6 +10,7 @@ import {
 
 const statusColors: Record<string, string> = {
   new: 'bg-[#edf3f3] text-[#124343] border-[#b4c8c7]',
+  accepted: 'bg-[#edf8f1] text-[#28634c] border-[#a9cdb8]',
   investigating: 'bg-[#fff4ed] text-[#734934] border-[#d9b49d]',
   review: 'bg-[#f5f0eb] text-[#58331f] border-[#d3bdaa]',
   completed: 'bg-[#edf8f1] text-[#28634c] border-[#a9cdb8]',
@@ -40,7 +41,15 @@ interface ReporterReviewRecord {
   title: string;
   reported_wallet: string;
   blockchain: string;
+  asset: string;
+  analysis_status: string;
+  analysis_message: string;
   submitted_at: string;
+  description?: string | null;
+}
+interface ReporterReviewDetail extends ReporterReviewRecord {
+  case_id?: string | null;
+  case_status?: string | null;
 }
 
 export default function DashboardPage() {
@@ -51,6 +60,8 @@ export default function DashboardPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [reporterSubmissions, setReporterSubmissions] = useState<ReporterReviewRecord[]>([]);
   const [assigningSubmission, setAssigningSubmission] = useState('');
+  const [reviewedSubmission, setReviewedSubmission] = useState<ReporterReviewDetail | null>(null);
+  const [reviewingSubmission, setReviewingSubmission] = useState('');
   const [user] = useState<UserRecord | null>(() => {
     if (typeof window === 'undefined') return null;
     const stored = localStorage.getItem('cryptotrace_user');
@@ -95,15 +106,30 @@ export default function DashboardPage() {
     void Promise.resolve().then(() => loadReporterSubmissions());
   }, [router, loadCases, loadReporterSubmissions, user?.role]);
 
-  const assignSubmission = async (submissionId: string) => {
+  const reviewSubmission = async (submissionId: string) => {
+    setReviewingSubmission(submissionId);
+    try {
+      const reviewed = await api.getReporterSubmissionForReview(submissionId);
+      setReviewedSubmission(reviewed);
+      setLoadError('');
+    } catch (err) {
+      console.error('Reporter submission review could not be loaded', err);
+      setLoadError('The report could not be opened. Refresh the queue and try again.');
+    } finally {
+      setReviewingSubmission('');
+    }
+  };
+
+  const acceptSubmission = async (submissionId: string) => {
     setAssigningSubmission(submissionId);
     try {
-      const assigned = await api.assignReporterSubmission(submissionId);
+      const assigned = await api.acceptReporterSubmission(submissionId);
       setReporterSubmissions((current) => current.filter((item) => item.id !== submissionId));
+      setReviewedSubmission(null);
       router.push(`/investigate?caseId=${encodeURIComponent(assigned.case_id)}`);
     } catch (err) {
-      console.error('Reporter submission assignment failed', err);
-      setLoadError('The reported wallet could not be assigned. Refresh the queue and try again.');
+      console.error('Reporter submission acceptance failed', err);
+      setLoadError('The report could not be accepted. Refresh the queue and try again.');
     } finally {
       setAssigningSubmission('');
     }
@@ -179,10 +205,30 @@ export default function DashboardPage() {
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
                 <p className="ct-eyebrow mb-1">Reporter intake</p>
-                <h2 id="reporter-queue-heading" className="text-lg font-bold text-[var(--ct-ink)]">Reports awaiting assignment</h2>
+                <h2 id="reporter-queue-heading" className="text-lg font-bold text-[var(--ct-ink)]">Incoming cases</h2>
               </div>
               <span className="ct-status-chip bg-[var(--ct-warning-surface)] text-[var(--risk-medium)]">{reporterSubmissions.length} waiting</span>
             </div>
+            {reviewedSubmission && (
+              <section className="ct-card mb-4 border-l-4 border-[var(--ct-primary)] p-4 sm:p-5" aria-labelledby="case-review-heading">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="ct-eyebrow mb-1">Case review</p>
+                    <h3 id="case-review-heading" className="text-base font-bold text-[var(--ct-ink)]">Review report before acceptance</h3>
+                    <p className="mt-1 font-mono text-[10px] text-[var(--ct-outline)]">{reviewedSubmission.reference_number}</p>
+                  </div>
+                  <button type="button" onClick={() => setReviewedSubmission(null)} className="self-start text-xs text-[var(--ct-ink-muted)] underline underline-offset-2">Close review</button>
+                </div>
+                <div className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                  <div><div className="ct-label">Network / asset</div><div className="mt-1 font-semibold text-[var(--ct-ink)]">{reviewedSubmission.blockchain} · {reviewedSubmission.asset}</div></div>
+                  <div><div className="ct-label">Wallet</div><div className="mt-1 break-all font-mono text-[var(--ct-ink)]">{reviewedSubmission.reported_wallet}</div></div>
+                  <div><div className="ct-label">Submitted</div><div className="mt-1 text-[var(--ct-ink)]">{reviewedSubmission.submitted_at ? new Date(reviewedSubmission.submitted_at).toLocaleString() : 'NOT AVAILABLE'}</div></div>
+                  <div><div className="ct-label">Capability</div><div className="mt-1 text-[var(--ct-ink)]">{reviewedSubmission.analysis_message}</div></div>
+                </div>
+                <div className="mt-3 border-t border-[var(--ct-outline-variant)] pt-3"><div className="ct-label">Reporter summary</div><p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">{reviewedSubmission.description || 'No incident summary provided.'}</p></div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><span className="ct-status-chip bg-[var(--ct-surface-high)] text-[var(--ct-primary)]">NEW · UNTRIAGED</span><button type="button" onClick={() => void acceptSubmission(reviewedSubmission.id)} disabled={assigningSubmission === reviewedSubmission.id} className="ct-button-primary px-4 py-2 text-xs disabled:opacity-50">{assigningSubmission === reviewedSubmission.id ? 'Accepting…' : 'Accept case'}</button></div>
+              </section>
+            )}
             <div className="grid gap-3 lg:grid-cols-2">
               {reporterSubmissions.map((submission) => (
                 <article key={submission.id} className="ct-card p-4">
@@ -192,10 +238,12 @@ export default function DashboardPage() {
                       <div className="font-mono text-[10px] text-[var(--ct-outline)]">{submission.reference_number}</div>
                       <h3 className="mt-1 truncate text-sm font-semibold text-[var(--ct-ink)]">{submission.title}</h3>
                       <p className="mt-1 truncate font-mono text-[10px] text-[var(--ct-ink-muted)]">{submission.reported_wallet}</p>
+                      <p className="mt-2 text-xs font-semibold text-[var(--ct-ink)]">{submission.blockchain} · {submission.asset}</p>
+                      <p className="mt-1 text-[10px] leading-4 text-[var(--ct-ink-muted)]">{submission.analysis_message}</p>
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                         <span className="text-[10px] text-[var(--ct-outline)]">Submitted {new Date(submission.submitted_at).toLocaleString()}</span>
-                        <button type="button" onClick={() => void assignSubmission(submission.id)} disabled={assigningSubmission === submission.id} className="ct-button-primary px-3 py-1.5 text-xs disabled:opacity-50">
-                          {assigningSubmission === submission.id ? 'Assigning…' : 'Assign to me'}
+                        <button type="button" onClick={() => void reviewSubmission(submission.id)} disabled={reviewingSubmission === submission.id} className="ct-button-primary px-3 py-1.5 text-xs disabled:opacity-50">
+                          {reviewingSubmission === submission.id ? 'Opening…' : 'Review'}
                         </button>
                       </div>
                     </div>

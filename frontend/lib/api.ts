@@ -133,6 +133,7 @@ class ApiClient {
     title: string;
     reported_wallet: string;
     blockchain: string;
+    asset: string;
     description?: string;
   }) {
     return this.request('/reporter/submissions', { method: 'POST', body: data });
@@ -148,6 +149,14 @@ class ApiClient {
 
   async listReporterSubmissionsForReview() {
     return this.request('/reporter/submissions/review');
+  }
+
+  async getReporterSubmissionForReview(submissionId: string) {
+    return this.request(`/reporter/submissions/${submissionId}/review`);
+  }
+
+  async acceptReporterSubmission(submissionId: string) {
+    return this.request(`/reporter/submissions/${submissionId}/accept`, { method: 'POST' });
   }
 
   async assignReporterSubmission(submissionId: string) {

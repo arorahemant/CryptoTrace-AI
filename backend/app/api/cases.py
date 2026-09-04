@@ -13,7 +13,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.audit import record_audit_event
 from app.core.security import decode_access_token
-from app.core.wallet_validation import validate_wallet_format
+from app.core.wallet_validation import analysis_capability, normalize_asset, validate_wallet_format
 from app.models.models import (
     Case, Wallet, Transaction, PatternFinding, Evidence,
     InvestigationEvent, FundFlow, RiskAssessment, VASPAttribution,
@@ -127,6 +127,12 @@ async def create_case(
     user = current_user
 
     blockchain = Blockchain(request.blockchain.value)
+    asset = normalize_asset(blockchain, request.asset)
+    if not asset:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Asset {request.asset!r} is not supported on {blockchain.value}.",
+        )
     # Validate wallet address format
     wallet = request.reported_wallet.strip()
     if not validate_wallet_format(wallet, blockchain):
@@ -141,6 +147,7 @@ async def create_case(
         description=request.description,
         reported_wallet=wallet,
         blockchain=blockchain,
+        asset=asset,
         status=CaseStatus.NEW,
         incident_date=request.incident_date,
         reported_amount=request.reported_amount,
@@ -306,7 +313,32 @@ async def investigate(
     Run the complete investigation pipeline for a case.
     This is the PRIMARY action — trace, analyze, detect, assess.
     """
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Report accepted, but analysis provider is not connected for "
+                f"{case.blockchain.value.title()}."
+            ),
+        )
+    already_started = case.status in (
+        CaseStatus.INVESTIGATING,
+        CaseStatus.REVIEW,
+        CaseStatus.COMPLETED,
+    ) or await db.scalar(
+        select(Wallet.id).where(Wallet.case_id == case.id).limit(1)
+    ) is not None
+    if not already_started:
+        record_audit_event(
+            db,
+            user=current_user,
+            action="investigation_started",
+            resource_type="case",
+            resource_id=case_id,
+            details={"case_number": case.case_number},
+            request=request_context,
+        )
     service = InvestigationService(db)
 
     try:
@@ -868,13 +900,19 @@ async def get_report(
 
 
 def _case_to_response(case: Case) -> CaseResponse:
+    blockchain = case.blockchain or Blockchain.DEMO
+    analysis_status, analysis_message = analysis_capability(blockchain)
     return CaseResponse(
         id=case.id,
         case_number=case.case_number,
         title=case.title,
         description=case.description,
         reported_wallet=case.reported_wallet,
-        blockchain=case.blockchain.value if case.blockchain else "demo",
+        blockchain=blockchain.value,
+        asset=case.asset or normalize_asset(blockchain, None),
+        source_submission_reference=case.source_submission_reference,
+        analysis_status=analysis_status,
+        analysis_message=analysis_message,
         status=case.status.value if case.status else "new",
         incident_date=case.incident_date,
         reported_amount=case.reported_amount,

@@ -15,7 +15,7 @@ from app.api.auth import get_current_user
 from app.core.audit import record_audit_event
 from app.core.database import get_db
 from app.core.security import decode_access_token
-from app.core.wallet_validation import validate_wallet_format
+from app.core.wallet_validation import analysis_capability, normalize_asset, validate_wallet_format
 from app.models.models import (
     Blockchain,
     Case,
@@ -119,12 +119,17 @@ async def _serialize_submission(
                 "role_title": profile.role_title,
             }
     last_update = case.updated_at if case and case.updated_at else submission.updated_at
+    blockchain = Blockchain(submission.blockchain)
+    analysis_status, analysis_message = analysis_capability(blockchain)
     return {
         "id": submission.id,
         "reference_number": submission.reference_number,
         "title": submission.title,
         "reported_wallet": submission.reported_wallet,
         "blockchain": submission.blockchain,
+        "asset": submission.asset or normalize_asset(blockchain, None),
+        "analysis_status": analysis_status,
+        "analysis_message": analysis_message,
         "status": status_code,
         "status_label": status_label,
         "submitted_at": submission.submitted_at,
@@ -143,6 +148,12 @@ async def create_submission(
 ):
     blockchain = Blockchain(request.blockchain.value)
     wallet = request.reported_wallet.strip()
+    asset = normalize_asset(blockchain, request.asset)
+    if not asset:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Asset {request.asset!r} is not supported on {blockchain.value}.",
+        )
     if not validate_wallet_format(wallet, blockchain):
         raise HTTPException(
             status_code=400,
@@ -154,6 +165,7 @@ async def create_submission(
         title=request.title.strip(),
         reported_wallet=wallet,
         blockchain=blockchain.value,
+        asset=asset,
         description=request.description.strip() if request.description else None,
         status="report_received",
     )
@@ -205,6 +217,9 @@ async def list_submissions_for_review(
                 "title": item.title,
                 "reported_wallet": item.reported_wallet,
                 "blockchain": item.blockchain,
+                "asset": item.asset or normalize_asset(Blockchain(item.blockchain), None),
+                "analysis_status": analysis_capability(Blockchain(item.blockchain))[0],
+                "analysis_message": analysis_capability(Blockchain(item.blockchain))[1],
                 "description": item.description,
                 "status": item.status,
                 "submitted_at": item.submitted_at.isoformat() if item.submitted_at else None,
@@ -214,13 +229,13 @@ async def list_submissions_for_review(
     }
 
 
-@router.post("/submissions/{submission_id}/assign")
-async def assign_submission(
+async def _get_reviewable_submission(
     submission_id: str,
-    request_context: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+    *,
+    record_review: bool = False,
+) -> ReporterSubmission:
     if current_user.role not in (UserRole.INVESTIGATOR, UserRole.SUPERVISOR, UserRole.ADMIN):
         raise HTTPException(status_code=403, detail="Investigator access required")
     try:
@@ -235,6 +250,61 @@ async def assign_submission(
     submission = result.scalars().first()
     if not submission:
         raise HTTPException(status_code=404, detail="Report not found")
+    if record_review:
+        record_audit_event(
+            db,
+            user=current_user,
+            action="report_reviewed",
+            resource_type="reporter_submission",
+            resource_id=str(submission.id),
+            details={"reference_number": submission.reference_number},
+        )
+    return submission
+
+
+def _review_response(submission: ReporterSubmission, case: Optional[Case] = None) -> dict:
+    blockchain = Blockchain(submission.blockchain)
+    analysis_status, analysis_message = analysis_capability(blockchain)
+    return {
+        "id": str(submission.id),
+        "reference_number": submission.reference_number,
+        "title": submission.title,
+        "reported_wallet": submission.reported_wallet,
+        "blockchain": submission.blockchain,
+        "asset": submission.asset or normalize_asset(blockchain, None),
+        "description": submission.description,
+        "analysis_status": analysis_status,
+        "analysis_message": analysis_message,
+        "status": "accepted" if case else "new",
+        "case_id": str(case.id) if case else None,
+        "case_status": case.status.value if case and case.status else None,
+        "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+    }
+
+
+@router.get("/submissions/{submission_id}/review")
+async def review_submission(
+    submission_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    submission = await _get_reviewable_submission(
+        submission_id,
+        db,
+        current_user,
+        record_review=True,
+    )
+    case = await db.get(Case, submission.case_id) if submission.case_id else None
+    return _review_response(submission, case)
+
+
+async def _accept_submission(
+    submission_id: str,
+    request_context: Request,
+    db: AsyncSession,
+    current_user: User,
+):
+    submission = await _get_reviewable_submission(submission_id, db, current_user)
     if submission.case_id:
         raise HTTPException(status_code=409, detail="Report is already assigned")
 
@@ -245,14 +315,28 @@ async def assign_submission(
         description=submission.description,
         reported_wallet=submission.reported_wallet,
         blockchain=blockchain,
-        status=CaseStatus.NEW,
+        asset=submission.asset or normalize_asset(blockchain, None),
+        source_submission_reference=submission.reference_number,
+        status=CaseStatus.ACCEPTED,
         investigator_id=current_user.id,
         is_demo=(blockchain == Blockchain.DEMO),
     )
     db.add(case)
     await db.flush()
     submission.case_id = case.id
-    submission.status = "under_investigation"
+    submission.status = "accepted"
+    record_audit_event(
+        db,
+        user=current_user,
+        action="case_accepted",
+        resource_type="case",
+        resource_id=str(case.id),
+        details={
+            "reference_number": submission.reference_number,
+            "submission_id": str(submission.id),
+        },
+        request=request_context,
+    )
     record_audit_event(
         db,
         user=current_user,
@@ -271,7 +355,35 @@ async def assign_submission(
         details={"case_id": str(case.id), "submission_id": str(submission.id)},
         request=request_context,
     )
-    return {"case_id": str(case.id), "case_number": case.case_number}
+    return {
+        "case_id": str(case.id),
+        "case_number": case.case_number,
+        "reference_number": submission.reference_number,
+        "status": "accepted",
+        "case_status": case.status.value,
+        "analysis_status": analysis_capability(blockchain)[0],
+    }
+
+
+@router.post("/submissions/{submission_id}/accept")
+async def accept_submission(
+    submission_id: str,
+    request_context: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await _accept_submission(submission_id, request_context, db, current_user)
+
+
+@router.post("/submissions/{submission_id}/assign")
+async def assign_submission(
+    submission_id: str,
+    request_context: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Backward-compatible alias for accepting and assigning a report."""
+    return await _accept_submission(submission_id, request_context, db, current_user)
 
 
 @router.get("/submissions/{submission_id}", response_model=ReporterSubmissionResponse)

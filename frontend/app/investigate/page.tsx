@@ -115,7 +115,7 @@ interface CaseAssignment {
   last_activity_at?: string | null;
   history_available: boolean;
 }
-interface CaseDetail { id: string; case_number: string; title: string; status: string; is_demo: boolean; reported_wallet: string; blockchain?: string; assignment?: CaseAssignment; summary?: { risk_level?: string; total_wallets?: number; total_transactions?: number }; }
+interface CaseDetail { id: string; case_number: string; title: string; status: string; is_demo: boolean; reported_wallet: string; blockchain?: string; asset?: string | null; source_submission_reference?: string | null; analysis_status?: string; analysis_message?: string; assignment?: CaseAssignment; summary?: { risk_level?: string; total_wallets?: number; total_transactions?: number }; }
 interface WhyData { wallet_address: string; reasons: string[]; findings?: FindingData[]; }
 interface ReportSection { title: string; section_type: string; content: string; }
 interface InvestigationData {
@@ -854,6 +854,7 @@ function InvestigateContent() {
 
   const hasInvestigation = nodes.length > 0;
   const riskBadge = getRiskBadge(investigation?.risk?.overall || caseData?.summary?.risk_level || 'low');
+  const analysisAvailable = caseData?.analysis_status === 'analysis_available';
   const traceHopCount = transactions.reduce((maxHop, transaction) => Math.max(maxHop, transaction.hop_number ?? 0), 0);
   const suspiciousTransactionCount = transactions.filter((transaction) => transaction.is_suspicious).length;
   const linkedEvidenceCount = evidence.filter((item) => item.transaction_hash || item.finding_id).length;
@@ -904,7 +905,7 @@ function InvestigateContent() {
           {!hasInvestigation ? (
             <button
               onClick={runInvestigation}
-              disabled={investigating}
+              disabled={investigating || !analysisAvailable}
               className="ct-button-primary flex items-center gap-1.5 px-4 py-1.5 text-xs disabled:opacity-50"
             >
               {investigating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
@@ -933,6 +934,7 @@ function InvestigateContent() {
                 {caseData.is_demo && <span className="ct-status-chip bg-[var(--ct-warning-surface)] text-[var(--risk-medium)]">Demo data</span>}
               </div>
               <p className="mt-1.5 max-w-3xl text-xs leading-5 text-[var(--ct-ink-muted)]">{investigationNarrative}</p>
+              <p className="mt-1 text-[10px] text-[var(--ct-outline)]">Network / asset · {caseData.blockchain || 'UNKNOWN'} / {caseData.asset || 'UNKNOWN'} · {caseData.analysis_message || 'Analysis capability unavailable.'}</p>
               <p className="mt-1 truncate font-mono text-[10px] text-[var(--ct-outline)]" title={caseData.reported_wallet}>Reported wallet · {caseData.reported_wallet}</p>
             </div>
             {[
@@ -1005,10 +1007,10 @@ function InvestigateContent() {
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2">Ready to investigate</h3>
                 <p className="text-slate-400 text-sm mb-1">Wallet: <span className="font-mono text-blue-400">{caseData?.reported_wallet}</span></p>
-                <p className="text-slate-500 text-xs mb-6">Run the investigation to trace available blockchain transactions.</p>
+                <p className="text-slate-500 text-xs mb-6">{analysisAvailable ? 'Run the investigation to trace available blockchain transactions.' : (caseData?.analysis_message || 'Live analysis is not connected for this network.')}</p>
                 <button
                   onClick={runInvestigation}
-                  disabled={investigating}
+                  disabled={investigating || !analysisAvailable}
                   className="ct-button-primary px-8 py-3 text-sm disabled:opacity-50"
                 >
                   {investigating ? (
