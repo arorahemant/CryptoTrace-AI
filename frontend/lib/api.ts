@@ -283,6 +283,15 @@ class ApiClient {
   async getReport(caseId: string) {
     return this.request(`/cases/${caseId}/report`);
   }
+
+  // ─── Public case validation ─────────────────────────────────────────────
+  async listPublicCases() {
+    return this.request('/public-cases');
+  }
+
+  async getPublicCaseComparison(caseId: string) {
+    return this.request(`/public-cases/${encodeURIComponent(caseId)}/comparison`);
+  }
 }
 
 export const api = new ApiClient();

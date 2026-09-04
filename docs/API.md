@@ -10,6 +10,8 @@ Base path `/api/v1`. Auth: `POST /auth/login`. Case APIs include create/list/det
 
 `POST /cases/{case_id}/evidence` persists an investigator bookmark. If a transaction, finding, or wallet is supplied, it must belong to the same case; the record is returned by the subsequent evidence read.
 
+Investigator-only public case validation uses `GET /public-cases`, `GET /public-cases/{case_id}`, and `GET /public-cases/{case_id}/comparison`. These endpoints return curated source-backed reference data and element-by-element results. They do not create an investigation from undisclosed wallets or transactions; unavailable public identifiers remain `NOT OBSERVABLE`, and external outcomes are `NOT COMPARABLE` to CryptoTrace operational requests.
+
 Database connection failures return HTTP 503 with a retryable response and do not expose connection details.
 
 The frontend uses `http://localhost:8000/api/v1` only during `next dev`. Production and installed-app builds must set `NEXT_PUBLIC_API_URL` to the hosted HTTPS API; if it is missing, requests fail closed with a configuration message instead of silently targeting the device's localhost.

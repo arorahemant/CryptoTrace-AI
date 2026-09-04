@@ -173,13 +173,22 @@ export default function DashboardPage() {
             <h1 className="text-2xl font-bold tracking-tight text-[var(--ct-ink)]">Your cases</h1>
             <p className="mt-1 text-sm text-[var(--ct-ink-muted)]">Open an active case or start with one reported wallet.</p>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="ct-button-primary flex items-center gap-2 px-4 py-2.5 text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            New Case
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/case-comparison')}
+              className="ct-button-secondary px-3 py-2.5 text-xs"
+            >
+              Case validation
+            </button>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="ct-button-primary flex items-center gap-2 px-4 py-2.5 text-sm"
+            >
+              <Plus className="w-4 h-4" />
+              New Case
+            </button>
+          </div>
         </div>
 
         {/* Stats Row */}

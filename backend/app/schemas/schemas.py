@@ -342,6 +342,77 @@ class RecommendationsResponse(BaseModel):
     recommendations: List[InvestigatorRecommendation]
 
 
+# ─── Public case validation ─────────────────────────────────────────────────
+
+class PublicCaseFact(BaseModel):
+    fact_id: str
+    label: str
+    value: str
+    source_locator: str
+
+
+class PublicCaseResponse(BaseModel):
+    case_id: str
+    title: str
+    case_label: str
+    source_authority: str
+    source_type: str
+    source_url: str
+    jurisdiction: str
+    publication_date: str
+    blockchain: str
+    network_note: str
+    asset: str
+    publicly_disclosed_wallets: List[str] = Field(default_factory=list)
+    wallet_disclosure_note: str
+    disclosed_transaction_references: List[str] = Field(default_factory=list)
+    transaction_disclosure_note: str
+    provenance: str
+    analysis_availability: str
+    analysis_note: str
+    facts: List[PublicCaseFact]
+    outcome_note: str
+
+
+class PublicCaseComparisonRow(BaseModel):
+    element: str
+    real_case: str
+    cryptotrace: str
+    result: str
+    why: str
+    evidence: List[str] = Field(default_factory=list)
+    source: str
+
+
+class PublicCaseCryptoTraceResult(BaseModel):
+    status: str
+    message: str
+    is_demo: bool
+    wallets: List[str] = Field(default_factory=list)
+    transaction_references: List[str] = Field(default_factory=list)
+    findings: List[str] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    attribution: Optional[dict[str, Any]] = None
+
+
+class PublicCaseAlignment(BaseModel):
+    label: str
+    comparable_elements: int
+    matched: int
+    partial: int
+    not_observable: int
+    not_comparable: int
+
+
+class PublicCaseComparisonResponse(BaseModel):
+    case: PublicCaseResponse
+    source: dict[str, str]
+    cryptotrace: PublicCaseCryptoTraceResult
+    rows: List[PublicCaseComparisonRow]
+    alignment: PublicCaseAlignment
+    limitations: str
+
+
 # ─── Investigation ────────────────────────────────────────────────────────────
 
 class InvestigateRequest(BaseModel):
