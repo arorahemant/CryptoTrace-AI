@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { Suspense, useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { ReplayBar } from '@/components/investigation/ReplayBar';
 import {
@@ -178,16 +178,18 @@ function buildInvestigationNarrative(values: {
 // ─── Main Page ────────────────────────────────────────────────
 export default function InvestigatePage() {
   return (
-    <ReactFlowProvider>
-      <InvestigateContent />
-    </ReactFlowProvider>
+    <Suspense fallback={<main id="main-content" className="ct-page-shell flex min-h-screen items-center justify-center">Loading investigation…</main>}>
+      <ReactFlowProvider>
+        <InvestigateContent />
+      </ReactFlowProvider>
+    </Suspense>
   );
 }
 
 function InvestigateContent() {
-  const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
-  const caseId = params.id as string;
+  const caseId = searchParams.get('caseId')?.trim() || '';
 
   // State
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
@@ -327,6 +329,7 @@ function InvestigateContent() {
 
   // ─── Load Case ────────────────────────────────────────────
   useEffect(() => {
+    if (!caseId) return;
     const storedUser = localStorage.getItem('cryptotrace_user');
     if (storedUser) {
       try {
@@ -730,6 +733,21 @@ function InvestigateContent() {
       setActionError(err instanceof Error ? err.message : 'Unable to open this replay event.');
     }
   };
+
+  if (!caseId) {
+    return (
+      <div className="min-h-screen bg-[var(--ct-surface)] flex items-center justify-center px-6">
+        <div className="max-w-md text-center">
+          <Shield className="w-10 h-10 text-red-400 mx-auto mb-4" />
+          <h1 className="text-lg font-semibold text-white mb-2">Case unavailable</h1>
+          <p className="text-sm text-red-300 mb-6">No case was selected. Return to the dashboard and choose a case.</p>
+          <button onClick={() => router.push('/dashboard')} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium">
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

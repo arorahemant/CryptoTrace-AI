@@ -9,23 +9,21 @@ do not by themselves prove that the backend is using PostgreSQL.
 Use one Render project for the staging components:
 
 ```text
-Browser / future Capacitor client
+Browser / Capacitor Android client
         ↓ HTTPS
-Render Node web service: existing Next.js frontend
+Render static site: exported Next.js frontend
         ↓ HTTPS + exact CORS allowlist
 Render Python web service: existing FastAPI backend
         ↓ private PostgreSQL connection
 Render managed PostgreSQL database
 ```
 
-This is recommended for staging because one platform can host the dynamic
-Next.js web service, FastAPI web service, and managed PostgreSQL in the same
-region. Render documents Next.js web-service deployment with `build` and
-`start` commands, supports FastAPI web services, provides managed Postgres,
-and gives services HTTPS `onrender.com` URLs. See the [Next.js deployment
-guide](https://render.com/docs/deploy-nextjs-app), [web-service
-documentation](https://render.com/docs/web-services), and [multi-service
-architecture guide](https://render.com/docs/multi-service-architecture).
+The frontend uses Next.js static export and produces `frontend/out`; it does
+not require a Node server at runtime. The FastAPI backend remains a separate
+Render web service backed by managed PostgreSQL and an explicit CORS allowlist.
+The Render dashboard configuration is external to this repository and must be
+verified there before deployment; this repository does not contain a Render
+Blueprint or deploy hook.
 
 Vercel for the frontend plus Render or Railway for the backend/database is
 also technically viable. Vercel has first-party Next.js App Router/SSR
@@ -39,9 +37,9 @@ a claim that Render is the final provider choice.
 
 The repository is a monorepo with two independent services.
 
-| Service | Root directory | Build command | Start command | Health check |
+| Service | Root directory | Build command | Runtime / publish setting | Health check |
 |---|---|---|---|---|
-| Next.js frontend | `frontend` | `npm ci && npm run build` | `npm run start` | `/` |
+| Next.js static frontend | `frontend` | `npm ci && npm run build` | Publish directory: `out` | `/` |
 | FastAPI backend | `backend` | `pip install -r requirements.txt` | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` | `/api/v1/health` |
 | PostgreSQL | managed datastore | provider-managed | provider-managed | provider-managed |
 
@@ -53,10 +51,10 @@ documents that file at the repository root, while this monorepo service uses
 `backend` as its isolated Root Directory. The service-level variable avoids
 an ambiguous file lookup and applies directly to this Python Web Service.
 
-The frontend must be a dynamic Node web service. Do not configure it as a
-static site or enable `output: "export"`; `/investigate/[id]` is currently a
-dynamic route and the app has not been refactored or verified for static
-export.
+The frontend is configured with `output: "export"`. Render must build from the
+`frontend` root and serve the generated `out` directory as a static site. The
+investigation route is `/investigate?caseId=<id>` so the exported
+`investigate.html` can serve every case without a dynamic server route.
 
 Expected values after a real staging service is created are placeholders only:
 
@@ -147,7 +145,8 @@ No migration rewrite is included in this checkpoint.
    `USE_SQLITE=false`, `DATABASE_URL`, a random `SECRET_KEY`, `DEBUG=false`,
    and the exact planned frontend origin in `CORS_ORIGINS`.
 3. Confirm the backend service starts and its health endpoint responds.
-4. Create the frontend Node web service and set
+4. Configure the frontend Render static site to build from `frontend`, publish
+   `out`, and set
    `NEXT_PUBLIC_API_URL` to the actual backend HTTPS API base. This value must
    be present before the frontend build.
 5. Replace any temporary CORS value with the actual frontend HTTPS origin and
@@ -155,7 +154,7 @@ No migration rewrite is included in this checkpoint.
 6. Run hosted login, case creation, investigation, authorization, report,
    and API smoke checks. Treat all records as explicitly demo data.
 7. Only after staging is stable, plan PostgreSQL migrations, live provider
-   integration, production secrets, and the later Capacitor shell.
+   integration, and production secrets.
 
 ## Rollback
 
@@ -166,18 +165,18 @@ forward-fix migration; do not assume that reverting application code reverts a
 schema. Until migrations exist, do not perform destructive production schema
 changes through startup `create_all`.
 
-## Capacitor impact
+## Capacitor and Android
 
-The future Android client should reuse this hosted frontend rather than create
-another UI. Its WebView will use the same HTTPS frontend and API. The current
-JWT is a Bearer token persisted in WebView `localStorage`, not a cookie, so the
-actual Capacitor shell must verify storage persistence, logout, deep links, and
-the final WebView origin. The final native origin must be added to
-`CORS_ORIGINS` only after the package configuration is selected and tested.
+Capacitor wraps the same exported frontend with `webDir: "out"`; it does not
+introduce a second UI. `npx cap sync android` copies the verified export into
+the native project, and the generated `frontend/android/gradlew.bat` wrapper
+builds the Android application. Android Studio is not required for this build
+path. Physical-device validation remains a separate gate and must not be
+claimed from an APK build alone.
 
-Dynamic routes, asset loading, reports, and React Flow interaction should be
-validated in the real shell later. No native project is created by this
-document.
+The WebView uses the hosted HTTPS API from the exported bundle. Its native
+origin is `https://localhost`, which must remain explicitly listed alongside
+the desktop origin in backend `CORS_ORIGINS`; wildcard CORS is prohibited.
 
 ## Current status
 
@@ -199,7 +198,7 @@ USE_SQLITE=false
 DEMO_MODE=true
 DEBUG=false
 SECRET_KEY=<random value of at least 32 characters; secret>
-CORS_ORIGINS=https://cryptotrace-frontend.onrender.com
+CORS_ORIGINS=https://cryptotrace-frontend.onrender.com,https://localhost
 PYTHON_VERSION=3.12.14
 ```
 

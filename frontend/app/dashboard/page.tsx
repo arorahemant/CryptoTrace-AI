@@ -99,7 +99,7 @@ export default function DashboardPage() {
     try {
       const assigned = await api.assignReporterSubmission(submissionId);
       setReporterSubmissions((current) => current.filter((item) => item.id !== submissionId));
-      router.push(`/investigate/${assigned.case_id}`);
+      router.push(`/investigate?caseId=${encodeURIComponent(assigned.case_id)}`);
     } catch (err) {
       console.error('Reporter submission assignment failed', err);
       setLoadError('The reported wallet could not be assigned. Refresh the queue and try again.');
@@ -244,11 +244,11 @@ export default function DashboardPage() {
                 role="button"
                 tabIndex={0}
                 aria-label={`Open case ${c.case_number}: ${c.title}`}
-                onClick={() => router.push(`/investigate/${c.id}`)}
+                onClick={() => router.push(`/investigate?caseId=${encodeURIComponent(c.id)}`)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
-                    router.push(`/investigate/${c.id}`);
+                    router.push(`/investigate?caseId=${encodeURIComponent(c.id)}`);
                   }
                 }}
                 className="ct-card ct-card-interactive group cursor-pointer p-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ct-primary)]"
@@ -297,7 +297,7 @@ export default function DashboardPage() {
           onCreated={(c: CaseRecord) => {
             setCases([c, ...cases]);
             setShowCreateModal(false);
-            router.push(`/investigate/${c.id}`);
+            router.push(`/investigate?caseId=${encodeURIComponent(c.id)}`);
           }}
         />
       )}
