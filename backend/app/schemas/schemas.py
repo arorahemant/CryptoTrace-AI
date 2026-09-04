@@ -47,6 +47,21 @@ class SeveritySchema(str, Enum):
     CRITICAL = "critical"
 
 
+class AssetActionTypeSchema(str, Enum):
+    FREEZE_REQUEST = "freeze_request"
+    PRESERVATION_REQUEST = "preservation_request"
+
+
+class AssetActionStatusSchema(str, Enum):
+    DRAFT = "draft"
+    PREPARED = "prepared"
+    SUBMITTED = "submitted"
+    ACKNOWLEDGED = "acknowledged"
+    ACTIONED = "actioned"
+    DECLINED = "declined"
+    MORE_INFORMATION_REQUIRED = "more_information_required"
+
+
 # ─── Auth ──────────────────────────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
@@ -224,6 +239,98 @@ class EvidenceCreate(BaseModel):
     metadata: Optional[dict[str, Any]] = None
 
 
+class AssetActionRequestCreate(BaseModel):
+    target_wallet: str = Field(..., min_length=3, max_length=255)
+    action_type: AssetActionTypeSchema
+    evidence_ids: List[UUID] = Field(..., min_length=1, max_length=100)
+    finding_ids: List[UUID] = Field(default_factory=list, max_length=100)
+
+
+class AssetActionStatusUpdate(BaseModel):
+    status: AssetActionStatusSchema
+
+
+class AssetActionReadiness(BaseModel):
+    case_id: UUID
+    ready: bool
+    destination_wallet: Optional[str]
+    asset: Optional[str]
+    observed_amount: Optional[float]
+    last_movement_at: Optional[datetime]
+    attribution_status: str
+    attribution_confidence: str
+    attribution_entity: Optional[str] = None
+    attribution_provenance: str = "unknown"
+    attribution_source_reference: Optional[str] = None
+    attribution_reasoning: Optional[str] = None
+    attribution_evidence_ids: List[UUID] = Field(default_factory=list)
+    attribution_transaction_hashes: List[str] = Field(default_factory=list)
+    supporting_transaction_hash: Optional[str]
+    supporting_finding_id: Optional[UUID]
+    evidence_count: int
+    evidence_ids: List[UUID] = Field(default_factory=list)
+    finding_ids: List[UUID] = Field(default_factory=list)
+    checks: List[dict[str, Any]]
+
+
+class AssetActionRequestResponse(BaseModel):
+    id: UUID
+    case_id: UUID
+    actor_id: UUID
+    target_wallet: str
+    action_type: AssetActionTypeSchema
+    status: AssetActionStatusSchema
+    evidence_ids: List[UUID]
+    finding_ids: List[UUID]
+    observed_asset: Optional[str]
+    observed_amount: Optional[float]
+    last_movement_at: Optional[datetime]
+    attribution_status: str
+    attribution_confidence: str
+    attribution_entity: Optional[str] = None
+    attribution_provenance: str = "unknown"
+    attribution_source_reference: Optional[str] = None
+    attribution_reasoning: Optional[str] = None
+    supporting_reason: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+class RecommendationPrioritySchema(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class RecommendationTypeSchema(str, Enum):
+    REVIEW_HIGHEST_VALUE_INTERMEDIARY = "review_highest_value_intermediary"
+    INSPECT_STRONGEST_FINDING = "inspect_strongest_finding"
+    REVIEW_DESTINATION_ATTRIBUTION = "review_destination_attribution"
+    PRESERVE_SUPPORTING_EVIDENCE = "preserve_supporting_evidence"
+    PREPARE_ASSET_ACTION_REQUEST = "prepare_asset_action_request"
+
+
+class InvestigatorRecommendation(BaseModel):
+    recommendation_id: str
+    case_id: UUID
+    type: RecommendationTypeSchema
+    title: str
+    action: str
+    factual_reason: str
+    priority: RecommendationPrioritySchema
+    evidence_ids: List[UUID] = Field(default_factory=list)
+    transaction_hashes: List[str] = Field(default_factory=list)
+    finding_ids: List[UUID] = Field(default_factory=list)
+    target_wallet: Optional[str] = None
+    deterministic_source: str
+    created_at: datetime
+
+
+class RecommendationsResponse(BaseModel):
+    case_id: UUID
+    recommendations: List[InvestigatorRecommendation]
+
+
 # ─── Investigation ────────────────────────────────────────────────────────────
 
 class InvestigateRequest(BaseModel):
@@ -266,6 +373,13 @@ class GraphNode(BaseModel):
     vasp_confidence: Optional[str] = None
     vasp_source: Optional[str] = None
     vasp_supporting_evidence: Optional[str] = None
+    vasp_attribution_status: str = "unknown"
+    vasp_provenance: str = "unknown"
+    vasp_source_reference: Optional[str] = None
+    vasp_reasoning: Optional[str] = None
+    vasp_supporting_evidence_ids: List[UUID] = Field(default_factory=list)
+    vasp_supporting_transaction_hashes: List[str] = Field(default_factory=list)
+    vasp_verified_at: Optional[datetime] = None
 
 
 class GraphEdge(BaseModel):
@@ -390,6 +504,13 @@ class VASPResponse(BaseModel):
     confidence: str
     source: str
     supporting_evidence: Optional[str]
+    attribution_status: str = "unknown"
+    provenance: str = "unknown"
+    source_reference: Optional[str] = None
+    reasoning: Optional[str] = None
+    supporting_evidence_ids: List[UUID] = Field(default_factory=list)
+    supporting_transaction_hashes: List[str] = Field(default_factory=list)
+    verified_at: Optional[datetime] = None
 
 
 

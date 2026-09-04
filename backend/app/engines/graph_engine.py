@@ -195,6 +195,13 @@ class GraphEngine:
                 "vasp_confidence": vasp.get("confidence", None),
                 "vasp_source": vasp.get("source", None),
                 "vasp_supporting_evidence": vasp.get("supporting_evidence", None),
+                "vasp_attribution_status": vasp.get("attribution_status", "unknown"),
+                "vasp_provenance": vasp.get("provenance", "unknown"),
+                "vasp_source_reference": vasp.get("source_reference", None),
+                "vasp_reasoning": vasp.get("reasoning", None),
+                "vasp_supporting_evidence_ids": vasp.get("supporting_evidence_ids", []),
+                "vasp_supporting_transaction_hashes": vasp.get("supporting_transaction_hashes", []),
+                "vasp_verified_at": vasp.get("verified_at", None),
             })
 
         for u, v, data in self.graph.edges(data=True):

@@ -40,8 +40,8 @@ export default function LoginPage() {
 
   return (
     <main id="main-content" className="ct-page ct-login-page flex items-center px-4 py-6 sm:px-8 sm:py-10">
-      <div className="mx-auto grid w-full max-w-6xl overflow-hidden rounded-xl border border-[var(--ct-outline-variant)] bg-white shadow-[var(--ct-shadow-md)] lg:grid-cols-[1.12fr_0.88fr]">
-        <section className="flex flex-col justify-between bg-[var(--ct-surface-low)] p-6 sm:p-10 lg:p-12" aria-labelledby="product-heading">
+      <div className="ct-login-shell mx-auto grid w-full max-w-6xl overflow-hidden rounded-xl border border-[var(--ct-outline-variant)] bg-white shadow-[var(--ct-shadow-md)] lg:grid-cols-[1.12fr_0.88fr]">
+        <section className="ct-login-hero flex flex-col justify-between bg-[var(--ct-surface-low)] p-6 sm:p-10 lg:p-12" aria-labelledby="product-heading">
           <div>
             <div className="mb-10 flex items-center gap-3">
               <div className="ct-brand-mark h-11 w-11 rounded-lg">
@@ -53,15 +53,15 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <p className="ct-eyebrow mb-3">Blockchain fraud investigation platform</p>
+            <p className="ct-eyebrow mb-3">Trusted investigation workspace</p>
             <h1 id="product-heading" className="max-w-xl text-3xl font-bold leading-tight tracking-[-0.025em] text-[var(--ct-ink)] sm:text-4xl">
-              One reported wallet. A complete, evidence-linked money trail.
+              One Wallet. Complete Investigation.
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-[var(--ct-ink-muted)]">
               Trace how funds moved, understand why activity was flagged, and preserve the transactions supporting each finding.
             </p>
 
-            <div className="mt-8 grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3" aria-label="Platform capabilities">
+            <div className="ct-login-capabilities mt-8 grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3" aria-label="Platform capabilities">
               {[
                 { icon: Route, label: 'Follow the money', detail: 'Map wallet-to-wallet movement.' },
                 { icon: ShieldCheck, label: 'Explain findings', detail: 'Connect analysis to evidence.' },
@@ -76,13 +76,20 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <p className="mt-10 border-t border-[var(--ct-outline-variant)] pt-5 text-xs leading-5 text-[var(--ct-ink-muted)]">
+          <p className="ct-login-trust mt-10 border-t border-[var(--ct-outline-variant)] pt-5 text-xs leading-5 text-[var(--ct-ink-muted)]">
             Analysis is derived from available blockchain records and deterministic case data. Conclusions remain subject to investigator review.
           </p>
         </section>
 
-        <section className="flex items-center p-6 sm:p-10 lg:p-12" aria-labelledby="sign-in-heading">
+        <section className="ct-login-auth flex items-center p-6 sm:p-10 lg:p-12" aria-labelledby="sign-in-heading">
           <div className="w-full">
+            <div className="ct-mobile-role-entry mb-5 sm:hidden" aria-label="Choose how to enter CryptoTrace">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ct-outline)]">Choose your path</p>
+              <div className="grid gap-2">
+                <button type="button" onClick={() => selectDemoRole('reporter')} aria-pressed={demoRole === 'reporter'} className={`min-h-12 rounded border px-4 text-left text-xs font-bold uppercase tracking-wide ${demoRole === 'reporter' ? 'border-[var(--ct-primary)] bg-[var(--ct-primary)] text-white' : 'border-[var(--ct-outline-variant)] bg-white text-[var(--ct-primary)]'}`}>Report suspicious wallet</button>
+                <button type="button" onClick={() => selectDemoRole('investigator')} aria-pressed={demoRole === 'investigator'} className={`min-h-12 rounded border px-4 text-left text-xs font-bold uppercase tracking-wide ${demoRole === 'investigator' ? 'border-[var(--ct-primary)] bg-[var(--ct-primary)] text-white' : 'border-[var(--ct-outline-variant)] bg-white text-[var(--ct-primary)]'}`}>Investigator login</button>
+              </div>
+            </div>
             <p className="ct-eyebrow mb-2">Secure workspace</p>
             <h2 id="sign-in-heading" className="text-2xl font-bold tracking-tight text-[var(--ct-ink)]">Sign in to continue</h2>
             <p className="mt-2 text-sm leading-6 text-[var(--ct-ink-muted)]">Use your authorized CryptoTrace account to open your case workspace.</p>
@@ -110,14 +117,17 @@ export default function LoginPage() {
               </button>
             </form>
 
-            <div className="mt-7 rounded-lg border border-[#d9c3af] bg-[var(--ct-warning-surface)] p-4">
+            <div className="ct-demo-context mt-7 rounded-lg border border-[#d9c3af] bg-[var(--ct-warning-surface)] p-4">
               <div className="flex items-start gap-3">
                 <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--risk-medium)]" aria-hidden="true" />
                 <div>
                   <div className="text-xs font-bold uppercase tracking-wide text-[var(--risk-medium)]">Demonstration workspace</div>
                   <p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">Choose a role to preview its authorized workflow. Resulting data is demonstration data and must not be treated as a live-chain result.</p>
                   <div className="mt-3 grid grid-cols-2 gap-2" aria-label="Demo role">
-                    {(['investigator', 'reporter'] as const).map((role) => (
+                    {([
+                      { role: 'reporter', label: 'Report suspicious wallet' },
+                      { role: 'investigator', label: 'Investigator login' },
+                    ] as const).map(({ role, label }) => (
                       <button
                         key={role}
                         type="button"
@@ -125,7 +135,7 @@ export default function LoginPage() {
                         onClick={() => selectDemoRole(role)}
                         className={`min-h-10 rounded-md border px-2 text-xs font-semibold capitalize ${demoRole === role ? 'border-[var(--ct-primary)] bg-white text-[var(--ct-primary)]' : 'border-[#d9c3af] bg-transparent text-[var(--ct-ink-muted)] hover:bg-white/70'}`}
                       >
-                        {role} demo
+                        {label}
                       </button>
                     ))}
                   </div>

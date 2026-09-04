@@ -96,7 +96,7 @@ class RiskEngine:
                 "description": (
                     f"This wallet is attributed to {vasp_data.get('entity_name', 'unknown entity')} "
                     f"({vasp_data.get('confidence', 'unknown')} confidence). "
-                    f"Funds reaching a known entity is significant for the investigation."
+                    f"Funds reaching an attributed entity is significant for the investigation; ownership is not independently verified here."
                 ),
                 "weight": weight,
                 "score_contribution": round(contribution, 2),

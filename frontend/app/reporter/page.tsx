@@ -63,6 +63,7 @@ export default function ReporterPage() {
   }, []);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     if (!api.getToken()) {
       router.replace('/');
       return;
@@ -119,8 +120,8 @@ export default function ReporterPage() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
-        <section className="mb-7">
+      <div className="ct-reporter-content mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
+        <section className="ct-reporter-intro mb-7">
           <p className="ct-eyebrow mb-2">Your report</p>
           <h1 className="text-2xl font-bold tracking-tight text-[var(--ct-ink)] sm:text-3xl">Report one wallet. Track your submission.</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--ct-ink-muted)]">Submit a suspicious wallet and keep the reference ID. This view shows only safe status information for reports owned by your account.</p>
@@ -134,7 +135,7 @@ export default function ReporterPage() {
           </div>
         )}
 
-        <section className="ct-card p-5 sm:p-6" aria-labelledby="report-wallet-heading">
+        <section id="report-wallet" className="ct-reporter-form ct-card p-5 sm:p-6" aria-labelledby="report-wallet-heading">
           <div className="mb-5 flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--ct-surface-high)] text-[var(--ct-primary)]"><Send className="h-4 w-4" /></div>
             <div><h2 id="report-wallet-heading" className="font-bold text-[var(--ct-ink)]">Report a suspicious wallet</h2><p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">Wallet format is validated. Submission does not claim ownership, guilt, or a confirmed fraud finding.</p></div>
@@ -149,7 +150,7 @@ export default function ReporterPage() {
           </form>
         </section>
 
-        <section className="mt-8" aria-labelledby="submitted-reports-heading">
+        <section id="report-status" className="ct-reporter-status mt-8" aria-labelledby="submitted-reports-heading">
           <div className="mb-3 flex items-end justify-between gap-3"><div><p className="ct-eyebrow mb-1">Status</p><h2 id="submitted-reports-heading" className="text-lg font-bold text-[var(--ct-ink)]">Your submitted reports</h2></div><span className="text-xs text-[var(--ct-ink-muted)]">{submissions.length} total</span></div>
           {loading ? (
             <div role="status" className="ct-state-panel flex items-center justify-center py-10 text-sm text-[var(--ct-ink-muted)]"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading reports…</div>

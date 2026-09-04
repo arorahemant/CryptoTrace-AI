@@ -271,6 +271,9 @@ DEMO_VASP_ATTRIBUTIONS = {
         "attribution_type": "inferred",
         "confidence": "likely",
         "source": "demo_intelligence",
+        "provenance": "demo_intelligence",
+        "source_reference": "CryptoTrace Demo Intelligence",
+        "reasoning": "Observed destination relationship in the deterministic investigation dataset.",
         "supporting_evidence": "DEMO DATA: This attribution is simulated for demonstration. In production, this would come from verified address intelligence sources.",
     },
 }

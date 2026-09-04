@@ -24,6 +24,7 @@ from app.engines.trace_engine import TraceEngine
 from app.engines.graph_engine import GraphEngine
 from app.engines.pattern_engine import PatternEngine
 from app.engines.risk_engine import RiskEngine
+from app.services.attribution_service import normalize_attribution
 
 logger = logging.getLogger(__name__)
 _investigation_locks: dict[str, asyncio.Lock] = {}
@@ -170,7 +171,7 @@ class InvestigationService:
         finding_records = await self._save_findings(case, findings)
 
         # 7. VASP attribution
-        vasp_data = await self._get_vasp_attributions(case, raw_wallets)
+        vasp_data = await self._get_vasp_attributions(case, raw_wallets, raw_transactions)
 
         # 8. Risk assessment
         risk_results = self.risk_engine.assess_case_risk(
@@ -342,14 +343,7 @@ class InvestigationService:
         intermediaries = self.graph_engine.get_intermediaries()
 
         vasp_data = {
-            record.wallet_address: {
-                "entity_name": record.entity_name,
-                "entity_type": record.entity_type,
-                "attribution_type": record.attribution_type,
-                "confidence": record.confidence.value if record.confidence else "unknown",
-                "source": record.source,
-                "supporting_evidence": record.supporting_evidence,
-            }
+            record.wallet_address: normalize_attribution(record)
             for record in vasp_rows
         }
         risk_results = {
@@ -509,23 +503,32 @@ class InvestigationService:
         await self.db.flush()
         return records
 
-    async def _get_vasp_attributions(self, case: Case, wallets: Dict) -> Dict[str, Dict]:
+    async def _get_vasp_attributions(self, case: Case, wallets: Dict, transactions: List[Dict]) -> Dict[str, Dict]:
         """Get VASP attributions for discovered wallets."""
         vasp_data = {}
         if isinstance(self.provider, DemoProvider):
             for address in wallets:
                 vasp = self.provider.get_demo_vasp(address)
                 if vasp:
-                    vasp_data[address] = vasp
+                    normalized = normalize_attribution(vasp)
+                    normalized["supporting_transaction_hashes"] = [
+                        tx["hash"] for tx in transactions if tx.get("to_address") == address
+                    ]
+                    vasp_data[address] = normalized
                     attribution = VASPAttribution(
                         case_id=case.id,
                         wallet_address=address,
                         entity_name=vasp["entity_name"],
                         entity_type=vasp.get("entity_type"),
-                        attribution_type=vasp["attribution_type"],
-                        confidence=AttributionConfidence(vasp.get("confidence", "unknown")),
-                        source=vasp["source"],
-                        supporting_evidence=vasp.get("supporting_evidence"),
+                        attribution_type=normalized["attribution_type"],
+                        confidence=AttributionConfidence(normalized["confidence"]),
+                        source=normalized["source"],
+                        supporting_evidence=normalized["supporting_evidence"],
+                        attribution_status=normalized["attribution_status"],
+                        provenance=normalized["provenance"],
+                        source_reference=normalized["source_reference"],
+                        reasoning=normalized["reasoning"],
+                        supporting_transaction_hashes=normalized["supporting_transaction_hashes"],
                     )
                     self.db.add(attribution)
         return vasp_data
@@ -578,15 +581,29 @@ class InvestigationService:
                 title=f"VASP Attribution: {vasp['entity_name']}",
                 description=(
                     f"Wallet {address[:12]}... attributed to {vasp['entity_name']} "
-                    f"({vasp.get('confidence', 'unknown')} confidence). "
+                    f"({vasp.get('attribution_type', 'unknown')} status; {vasp.get('confidence', 'unknown')} confidence). "
                     f"Source: {vasp.get('source', 'unknown')}. "
                     f"{vasp.get('supporting_evidence', '')}"
                 ),
-                reason=f"Wallet attributed to known entity: {vasp['entity_name']}",
+                reason=(
+                    f"Wallet has {vasp.get('attribution_status', 'unknown')} attribution "
+                    f"to {vasp['entity_name']}; source: {vasp.get('source_reference') or vasp.get('source', 'unknown')}."
+                ),
                 wallet_address=address,
                 source="vasp_attribution",
             )
             self.db.add(evidence)
+            await self.db.flush()
+            vasp["supporting_evidence_ids"] = [str(evidence.id)]
+            attribution_result = await self.db.execute(
+                select(VASPAttribution).where(
+                    VASPAttribution.case_id == case.id,
+                    VASPAttribution.wallet_address == address,
+                ).order_by(VASPAttribution.created_at.desc())
+            )
+            attribution_record = attribution_result.scalars().first()
+            if attribution_record:
+                attribution_record.supporting_evidence_ids = [str(evidence.id)]
 
         # Evidence from high-risk wallets
         for address, risk in risk_results.items():
@@ -741,13 +758,7 @@ class InvestigationService:
         )
         vasp_records = vasp_result.scalars().all()
         vasp_data = {
-            v.wallet_address: {
-                "entity_name": v.entity_name,
-                "attribution_type": v.attribution_type,
-                "confidence": v.confidence.value if v.confidence else "unknown",
-                "source": v.source,
-                "supporting_evidence": v.supporting_evidence,
-            }
+            v.wallet_address: normalize_attribution(v)
             for v in vasp_records
         }
 

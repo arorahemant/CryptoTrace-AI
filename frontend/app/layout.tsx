@@ -16,7 +16,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "CryptoTrace AI — Blockchain Fraud Investigation Platform",
-  description: "Real-Time Identification of Fraud-Linked Cryptocurrency Exchanges from Victim-Reported Suspect Wallet Addresses through Automated Blockchain Analytics",
+  description: "Evidence-linked cryptocurrency investigation workspace for tracing reported wallet activity and explaining deterministic findings.",
   icons: {
     icon: "/cryptotrace-icon.svg",
     apple: "/cryptotrace-icon.svg",

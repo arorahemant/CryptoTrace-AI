@@ -81,6 +81,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     const token = api.getToken();
     if (!token) {
       router.push('/');

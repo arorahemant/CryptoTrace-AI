@@ -186,6 +186,39 @@ class ApiClient {
     return this.request(`/cases/${caseId}/evidence`);
   }
 
+  async getActionReadiness(caseId: string) {
+    return this.request(`/cases/${caseId}/action-readiness`);
+  }
+
+  async listActionRequests(caseId: string) {
+    return this.request(`/cases/${caseId}/action-requests`);
+  }
+
+  async createActionRequest(caseId: string, data: {
+    target_wallet: string;
+    action_type: 'freeze_request' | 'preservation_request';
+    evidence_ids: string[];
+    finding_ids?: string[];
+  }) {
+    return this.request(`/cases/${caseId}/action-requests`, { method: 'POST', body: data });
+  }
+
+  async getActionRequest(caseId: string, requestId: string) {
+    return this.request(`/cases/${caseId}/action-requests/${requestId}`);
+  }
+
+  async prepareActionRequest(caseId: string, requestId: string) {
+    return this.request(`/cases/${caseId}/action-requests/${requestId}/prepare`, { method: 'POST' });
+  }
+
+  async updateActionRequestStatus(caseId: string, requestId: string, status: string) {
+    return this.request(`/cases/${caseId}/action-requests/${requestId}/status`, { method: 'PATCH', body: { status } });
+  }
+
+  async getRecommendations(caseId: string) {
+    return this.request(`/cases/${caseId}/recommendations`);
+  }
+
   async saveEvidence(caseId: string, data: {
     evidence_type?: string;
     title: string;

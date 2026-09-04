@@ -77,6 +77,21 @@ class Blockchain(str, enum.Enum):
     DEMO = "demo"
 
 
+class AssetActionType(str, enum.Enum):
+    FREEZE_REQUEST = "freeze_request"
+    PRESERVATION_REQUEST = "preservation_request"
+
+
+class AssetActionStatus(str, enum.Enum):
+    DRAFT = "draft"
+    PREPARED = "prepared"
+    SUBMITTED = "submitted"
+    ACKNOWLEDGED = "acknowledged"
+    ACTIONED = "actioned"
+    DECLINED = "declined"
+    MORE_INFORMATION_REQUIRED = "more_information_required"
+
+
 # ─── User ──────────────────────────────────────────────────────────────────────
 
 class User(Base):
@@ -101,6 +116,7 @@ class User(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    asset_action_requests = relationship("AssetActionRequest", back_populates="actor")
 
 
 class InvestigatorPublicProfile(Base):
@@ -169,6 +185,7 @@ class Case(Base):
     investigation_events = relationship("InvestigationEvent", back_populates="case", cascade="all, delete-orphan")
     ai_conversations = relationship("AIConversation", back_populates="case", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="case", cascade="all, delete-orphan")
+    asset_action_requests = relationship("AssetActionRequest", back_populates="case", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_cases_status", "status"),
@@ -345,6 +362,13 @@ class VASPAttribution(Base):
     confidence = Column(Enum(AttributionConfidence), nullable=False, default=AttributionConfidence.UNKNOWN)
     source = Column(String(255), nullable=False)
     supporting_evidence = Column(Text, nullable=True)
+    attribution_status = Column(String(50), nullable=False, default="unknown")
+    provenance = Column(String(50), nullable=False, default="unknown")
+    source_reference = Column(String(500), nullable=True)
+    reasoning = Column(Text, nullable=True)
+    supporting_evidence_ids = Column(JSON, nullable=True)
+    supporting_transaction_hashes = Column(JSON, nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     case = relationship("Case", back_populates="vasp_attributions")
@@ -478,6 +502,41 @@ class Report(Base):
 
 
 # ─── Audit Log ────────────────────────────────────────────────────────────────
+
+class AssetActionRequest(Base):
+    """Structured request prepared for an external preservation/freeze actor."""
+    __tablename__ = "asset_action_requests"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    case_id = Column(UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
+    actor_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    target_wallet = Column(String(255), nullable=False)
+    action_type = Column(Enum(AssetActionType), nullable=False)
+    status = Column(Enum(AssetActionStatus), nullable=False, default=AssetActionStatus.DRAFT)
+    evidence_ids = Column(JSON, nullable=False)
+    finding_ids = Column(JSON, nullable=False, default=list)
+    observed_asset = Column(String(50), nullable=True)
+    observed_amount = Column(Float, nullable=True)
+    last_movement_at = Column(DateTime(timezone=True), nullable=True)
+    attribution_status = Column(String(50), nullable=False, default="unknown")
+    attribution_confidence = Column(String(50), nullable=False, default="unknown")
+    attribution_entity = Column(String(255), nullable=True)
+    attribution_provenance = Column(String(50), nullable=False, default="unknown")
+    attribution_source_reference = Column(String(500), nullable=True)
+    attribution_reasoning = Column(Text, nullable=True)
+    supporting_reason = Column(Text, nullable=True)
+    request_fingerprint = Column(String(64), nullable=False, unique=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    case = relationship("Case", back_populates="asset_action_requests")
+    actor = relationship("User", back_populates="asset_action_requests")
+
+    __table_args__ = (
+        Index("ix_asset_action_requests_case", "case_id"),
+        Index("ix_asset_action_requests_status", "status"),
+    )
+
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"

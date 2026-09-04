@@ -1,14 +1,15 @@
 'use client';
 
-import { Suspense, useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, Suspense, useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { ReplayBar } from '@/components/investigation/ReplayBar';
+import { SafeMarkdown } from '@/components/investigation/SafeMarkdown';
 import {
   Shield, Search, Play,
   AlertTriangle, Eye, FileText, MessageSquare, ChevronLeft,
-  Loader2, Crosshair,
-  Bookmark, ArrowRight, Activity, ClipboardList, Send, XCircle
+  Loader2,
+  Bookmark, ArrowRight, ClipboardList, Send, XCircle
 } from 'lucide-react';
 import ReactFlow, {
   Background, Controls, MiniMap,
@@ -35,6 +36,12 @@ interface GraphNodeData {
   vasp_confidence?: string | null;
   vasp_source?: string | null;
   vasp_supporting_evidence?: string | null;
+  vasp_attribution_status?: string | null;
+  vasp_provenance?: string | null;
+  vasp_source_reference?: string | null;
+  vasp_reasoning?: string | null;
+  vasp_supporting_evidence_ids?: string[];
+  vasp_supporting_transaction_hashes?: string[];
   risk_category?: string | null;
   risk_score?: number | null;
   risk_signals?: Array<{ signal_name?: string; description?: string; score_contribution?: number }>;
@@ -66,6 +73,9 @@ interface FindingData {
   created_at?: string;
 }
 interface EvidenceData { id: string; evidence_type?: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; finding_id?: string; source?: string; created_at?: string; is_bookmarked?: boolean; }
+interface ActionReadiness { case_id: string; ready: boolean; destination_wallet?: string | null; asset?: string | null; observed_amount?: number | null; last_movement_at?: string | null; attribution_status: string; attribution_confidence: string; attribution_entity?: string | null; attribution_provenance?: string; attribution_source_reference?: string | null; attribution_reasoning?: string | null; attribution_evidence_ids?: string[]; attribution_transaction_hashes?: string[]; supporting_transaction_hash?: string | null; supporting_finding_id?: string | null; evidence_count: number; evidence_ids: string[]; finding_ids: string[]; checks: Array<{ key: string; label: string; complete: boolean }>; }
+interface ActionRequest { id: string; case_id: string; actor_id: string; target_wallet: string; action_type: string; status: string; evidence_ids: string[]; finding_ids: string[]; observed_asset?: string | null; observed_amount?: number | null; last_movement_at?: string | null; attribution_status: string; attribution_confidence: string; attribution_entity?: string | null; attribution_provenance?: string; attribution_source_reference?: string | null; attribution_reasoning?: string | null; supporting_reason?: string | null; created_at: string; updated_at: string; }
+interface Recommendation { recommendation_id: string; case_id: string; type: string; title: string; action: string; factual_reason: string; priority: 'high' | 'medium' | 'low'; evidence_ids: string[]; transaction_hashes: string[]; finding_ids: string[]; target_wallet?: string | null; deterministic_source: string; created_at: string; }
 interface TransactionData {
   id?: string;
   hash: string;
@@ -140,6 +150,12 @@ function getRiskBadge(category: string | null): { bg: string; text: string } {
     low: { bg: 'bg-green-500/10 border-green-500/30', text: 'text-green-400' },
   };
   return map[category || 'low'] || map.low;
+}
+
+function attributionLabel(status?: string | null): string {
+  if (status === 'known_verified' || status === 'known') return 'KNOWN / VERIFIED';
+  if (status === 'likely_inferred' || status === 'likely') return 'LIKELY / INFERRED';
+  return 'UNKNOWN';
 }
 
 const severityRank: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
@@ -223,6 +239,11 @@ function InvestigateContent() {
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
   const [savingEvidence, setSavingEvidence] = useState(false);
   const [evidenceMessage, setEvidenceMessage] = useState('');
+  const [actionReadiness, setActionReadiness] = useState<ActionReadiness | null>(null);
+  const [actionRequests, setActionRequests] = useState<ActionRequest[]>([]);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState('');
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
 
   // Replay
   const [replayEvents, setReplayEvents] = useState<ReplayEvent[]>([]);
@@ -260,6 +281,7 @@ function InvestigateContent() {
       // If already investigated, load data
       if (data.status === 'investigating' || data.status === 'review' || data.status === 'completed') {
         await loadInvestigationData(data);
+        await loadActionData();
         await loadExistingReport();
       }
     } catch (err) {
@@ -277,6 +299,22 @@ function InvestigateContent() {
     } catch (err) {
       console.error('Failed to load audit log', err);
       setActionError(err instanceof Error ? err.message : 'Unable to load the audit log.');
+    }
+  }
+
+  async function loadActionData() {
+    try {
+      const [readinessData, requestsData, recommendationData] = await Promise.all([
+        api.getActionReadiness(caseId),
+        api.listActionRequests(caseId),
+        api.getRecommendations(caseId),
+      ]);
+      setActionReadiness(readinessData);
+      setActionRequests(requestsData || []);
+      setRecommendations(recommendationData.recommendations || []);
+    } catch (err) {
+      console.error('Failed to load asset action data', err);
+      setActionMessage(err instanceof Error ? err.message : 'Unable to load action readiness.');
     }
   }
 
@@ -363,6 +401,7 @@ function InvestigateContent() {
       // Load additional data
       await loadInvestigationData(undefined, result);
       await loadAuditLog();
+      await loadActionData();
       setActiveTab('overview');
     } catch (err) {
       console.error('Investigation failed', err);
@@ -633,6 +672,44 @@ function InvestigateContent() {
     }
   };
 
+  const createActionRequest = async (actionType: 'freeze_request' | 'preservation_request') => {
+    if (!actionReadiness?.destination_wallet || actionReadiness.evidence_ids.length === 0 || actionLoading) return;
+    setActionLoading(true);
+    setActionMessage('');
+    try {
+      await api.createActionRequest(caseId, {
+        target_wallet: actionReadiness.destination_wallet,
+        action_type: actionType,
+        evidence_ids: actionReadiness.evidence_ids,
+        finding_ids: actionReadiness.finding_ids,
+      });
+      await loadActionData();
+      await loadAuditLog();
+      setActionMessage('Request created as DRAFT from existing case evidence.');
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : 'Unable to create the request.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const updateActionRequest = async (requestId: string, nextStatus: string, prepare = false) => {
+    if (actionLoading) return;
+    setActionLoading(true);
+    setActionMessage('');
+    try {
+      if (prepare) await api.prepareActionRequest(caseId, requestId);
+      else await api.updateActionRequestStatus(caseId, requestId, nextStatus);
+      await loadActionData();
+      await loadAuditLog();
+      setActionMessage('Operational status recorded in CryptoTrace. External action is not independently verified.');
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : 'Unable to update request status.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const selectEvidence = (item: EvidenceData) => {
     setSelectedEvidence(item);
     if (item.transaction_hash) {
@@ -662,6 +739,9 @@ function InvestigateContent() {
     setSelectedNode(node.data);
     setActiveTab('overview');
     void loadWhy(node.data.address);
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+      window.setTimeout(() => document.querySelector('.ct-investigation-inspector')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    }
   };
 
   const onEdgeClick = (_: React.MouseEvent, edge: Edge<GraphEdgeData>) => {
@@ -781,6 +861,10 @@ function InvestigateContent() {
   const intermediaryCount = nodes.filter((node) => node.data.is_intermediary).length;
   const destinationCount = nodes.filter((node) => node.data.is_destination).length;
   const strongestFinding = getStrongestFinding(findings);
+  const amountTraced = Number(investigation?.fund_flow_summary?.total_amount_origin || 0);
+  const traceAsset = transactions.find((transaction) => transaction.asset)?.asset;
+  const primaryPath = investigation?.primary_path || investigation?.graph?.primary_path || [];
+  const destinationNode = nodes.find((node) => node.data.is_destination)?.data;
   const investigationNarrative = buildInvestigationNarrative({
     walletCount: nodes.length,
     transactionCount: transactions.length,
@@ -802,15 +886,16 @@ function InvestigateContent() {
           <div className="ct-brand-mark h-7 w-7 rounded-md">
             <Shield className="w-3.5 h-3.5 text-white" />
           </div>
-          <span className="text-sm font-bold text-white">CryptoTrace AI</span>
-          <span className="text-slate-600">|</span>
+          <span className="ct-investigation-header-brand text-sm font-bold text-white">CryptoTrace AI</span>
+          <span className="ct-investigation-header-separator text-slate-600">|</span>
+          <span className="ct-mobile-case-label hidden text-[10px] font-bold uppercase tracking-wide text-[var(--ct-outline)]">Case</span>
           <span className="font-mono text-xs text-slate-400">{caseData?.case_number}</span>
           <span className="hidden max-w-48 truncate text-xs text-slate-400 md:inline" title={caseData.title}>{caseData.title}</span>
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${riskBadge.bg} ${riskBadge.text}`}>
+          <span className={`ct-investigation-header-risk text-[10px] px-2 py-0.5 rounded-full font-medium border ${riskBadge.bg} ${riskBadge.text}`}>
             {(investigation?.risk?.overall || caseData?.summary?.risk_level || 'PENDING').toUpperCase()} RISK
           </span>
           {caseData?.is_demo && (
-            <span className="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded-full border border-amber-500/20">
+            <span className="ct-investigation-header-demo text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded-full border border-amber-500/20">
               DEMO DATA
             </span>
           )}
@@ -825,23 +910,7 @@ function InvestigateContent() {
               {investigating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
               {investigating ? 'Investigating…' : 'Run investigation'}
             </button>
-          ) : (
-            <>
-              <button onClick={startReplay}
-                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[var(--ct-surface-high)] text-[var(--ct-primary)] rounded text-xs font-medium hover:bg-[var(--ct-surface-low)] border border-[var(--ct-outline-variant)]">
-                <Play className="w-3 h-3" /> Replay
-              </button>
-              <button onClick={() => setActiveTab('ai')}
-                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[var(--ct-surface-high)] text-[var(--accent-purple)] rounded text-xs font-medium hover:bg-[var(--ct-surface-low)] border border-[var(--ct-outline-variant)]">
-                <MessageSquare className="w-3 h-3" /> Ask Copilot
-              </button>
-              <button onClick={generateReport} disabled={generatingReport}
-                className="min-h-10 flex items-center gap-1.5 px-3 py-1.5 bg-[var(--ct-surface-high)] text-[var(--risk-low)] rounded text-xs font-medium hover:bg-[var(--ct-surface-low)] border border-[var(--ct-outline-variant)]">
-                {generatingReport ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
-                Report
-              </button>
-            </>
-          )}
+          ) : <span className="hidden text-[10px] font-medium text-[var(--ct-ink-muted)] sm:inline">Evidence-linked workspace</span>}
         </div>
       </header>
 
@@ -867,12 +936,12 @@ function InvestigateContent() {
               <p className="mt-1 truncate font-mono text-[10px] text-[var(--ct-outline)]" title={caseData.reported_wallet}>Reported wallet · {caseData.reported_wallet}</p>
             </div>
             {[
-              { label: 'Case status', value: caseData.status.replaceAll('_', ' ') },
-              { label: 'Investigation', value: investigation?.status?.replaceAll('_', ' ') || 'results ready' },
-              { label: 'Risk level', value: riskCategory },
+              { label: 'Risk', value: riskCategory },
+              { label: 'Amount traced', value: amountTraced > 0 ? `${amountTraced.toFixed(2)} ${traceAsset || 'asset'}` : '—' },
+              { label: 'Maximum hops', value: traceHopCount || '—' },
               { label: 'Wallets', value: nodes.length },
               { label: 'Transactions', value: transactions.length },
-              { label: 'Intermediaries', value: intermediaryCount },
+              { label: 'Findings', value: findings.length },
             ].map((metric) => (
               <div key={metric.label} className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface-low)] px-3 py-2.5">
                 <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-ink-muted)]">{metric.label}</div>
@@ -887,50 +956,43 @@ function InvestigateContent() {
       <div className="ct-investigation-main flex flex-1 overflow-hidden">
         {/* ─── Left Panel ──────────────────────────────────── */}
         <div className="ct-investigation-nav w-56 border-r border-[var(--ct-outline-variant)] bg-white flex flex-col shrink-0 overflow-y-auto">
-          <div className="p-3">
-            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-medium mb-2">Navigation</div>
+          <nav className="hidden p-3 md:block" aria-label="Case workspace">
+            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Workspace</div>
+            <button type="button" onClick={() => router.push('/dashboard')} className="mb-0.5 flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-xs text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)]"><ChevronLeft className="h-3.5 w-3.5" /><span>Dashboard / cases</span></button>
             {[
-              { id: 'overview', icon: Eye, label: 'Overview' },
-              { id: 'wallets', icon: Shield, label: 'Wallets', count: caseData?.summary?.total_wallets },
-              { id: 'transactions', icon: ArrowRight, label: 'Transactions', count: caseData?.summary?.total_transactions },
-              { id: 'findings', icon: AlertTriangle, label: 'Findings', count: findings.length },
+              { id: 'overview', icon: Eye, label: 'Investigation' },
+              { id: 'recommendations', icon: ClipboardList, label: 'Next actions', count: recommendations.length },
+              { id: 'action', icon: Shield, label: 'Action readiness', count: actionRequests.length },
               { id: 'evidence', icon: Bookmark, label: 'Evidence', count: evidence.length },
-              { id: 'timeline', icon: Activity, label: 'Timeline', count: timeline.length },
-              { id: 'audit', icon: ClipboardList, label: 'Audit', count: auditEvents.length },
-              { id: 'ai', icon: MessageSquare, label: 'AI Copilot' },
-              { id: 'report', icon: FileText, label: 'Report' },
+              { id: 'report', icon: FileText, label: 'Reports' },
+              { id: 'ai', icon: MessageSquare, label: 'Copilot' },
             ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`w-full min-h-10 flex items-center gap-2 px-3 py-2 rounded text-xs mb-0.5 transition-all
-                  ${activeTab === tab.id ? 'bg-[var(--ct-primary-container)] text-[var(--ct-primary)] border border-[#8aa9a9]' : 'text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)] hover:text-[var(--ct-ink)]'}`}
-              >
-                <tab.icon className="w-3.5 h-3.5" />
-                <span className="flex-1 text-left">{tab.label}</span>
-                {tab.count != null && tab.count > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.5 bg-[var(--ct-surface-high)] rounded-full text-[var(--ct-outline)]">{tab.count}</span>
-                )}
-              </button>
+              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} aria-pressed={activeTab === tab.id} className={`mb-0.5 flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-xs ${activeTab === tab.id ? 'border border-[#8aa9a9] bg-[var(--ct-primary-container)] text-[var(--ct-primary)]' : 'text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)] hover:text-[var(--ct-ink)]'}`}><tab.icon className="h-3.5 w-3.5" /><span className="flex-1 text-left">{tab.label}</span>{'count' in tab && tab.count != null && tab.count > 0 && <span className="rounded-full bg-[var(--ct-surface-high)] px-1.5 py-0.5 text-[10px]">{tab.count}</span>}</button>
             ))}
-          </div>
+            <details className="mt-1 border-t border-[var(--ct-outline-variant)] pt-2">
+              <summary className="flex min-h-10 cursor-pointer items-center rounded px-3 py-2 text-xs font-semibold text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)]">More tools</summary>
+              <div className="mt-1 space-y-0.5 pl-2">
+                {[{ id: 'findings', label: 'All findings' }, { id: 'wallets', label: 'Wallets' }, { id: 'transactions', label: 'Transactions' }, { id: 'timeline', label: 'Replay' }, { id: 'audit', label: 'Audit' }].map((tab) => <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className="flex min-h-10 w-full items-center rounded px-3 text-left text-[11px] text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)]">{tab.label}</button>)}
+                <button type="button" onClick={() => router.push('/settings')} className="flex min-h-10 w-full items-center rounded px-3 text-left text-[11px] text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)]">Settings</button>
+              </div>
+            </details>
+          </nav>
 
-          {/* Money Trail Button */}
-          {hasInvestigation && (
-            <div className="p-3 mt-auto border-t border-[var(--ct-outline-variant)]">
-              <button
-                onClick={() => setShowMoneyTrail(!showMoneyTrail)}
-                className={`w-full min-h-11 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold transition-all
-                  ${showMoneyTrail
-                    ? 'bg-[#124343] text-white border border-[#124343]'
-                    : 'bg-white text-[#124343] border border-[#8aa9a9] hover:bg-[#f4f4ef]'
-                  }`}
-              >
-                <Crosshair className="w-3.5 h-3.5" />
-                Money movement
-              </button>
+          <div className="ct-mobile-investigation-nav p-2 md:hidden" aria-label="Investigation tools">
+            <div className="grid grid-cols-4 gap-1">
+              <button type="button" onClick={() => router.push('/dashboard')} className="flex min-h-12 flex-col items-center justify-center gap-1 rounded px-1 text-[9px] font-semibold text-[var(--ct-ink-muted)]"><ChevronLeft className="h-4 w-4" /><span>Home</span></button>
+              {[
+                { id: 'overview', label: 'Investigation', icon: Eye },
+                { id: 'action', label: 'Readiness', icon: Shield },
+                { id: 'evidence', label: 'Evidence', icon: Bookmark },
+              ].map((tab) => (
+                <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} aria-pressed={activeTab === tab.id} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded px-1 text-[9px] font-semibold ${activeTab === tab.id ? 'bg-[var(--ct-primary-container)] text-[var(--ct-primary)]' : 'text-[var(--ct-ink-muted)]'}`}>
+                  <tab.icon className="h-4 w-4" /><span>{tab.label}</span>
+                </button>
+              ))}
+              <label className="flex min-h-12 flex-col items-center justify-center gap-1 rounded px-1 text-[9px] font-semibold text-[var(--ct-ink-muted)]"><span>More</span><select value={['recommendations', 'findings', 'wallets', 'transactions', 'timeline', 'ai', 'report', 'audit'].includes(activeTab) ? activeTab : ''} onChange={(event) => event.target.value && setActiveTab(event.target.value)} aria-label="Open more investigation tools" className="w-full bg-transparent text-center text-[9px] outline-none"><option value="">Tools</option><option value="recommendations">Next actions</option><option value="findings">Findings / WHY</option><option value="wallets">Wallets</option><option value="transactions">Transactions</option><option value="timeline">Replay</option><option value="ai">Copilot</option><option value="report">Report</option><option value="audit">Audit</option></select></label>
             </div>
-          )}
+          </div>
         </div>
 
         {/* ─── Center: Graph ───────────────────────────────── */}
@@ -1040,42 +1102,50 @@ function InvestigateContent() {
             </div>
           )}
           {activeTab === 'overview' && hasInvestigation && (
-            <div className="p-4 space-y-4 animate-fade-in">
-              <h3 className="text-sm font-bold text-white">Investigation Summary</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: 'Wallets', value: caseData?.summary?.total_wallets || nodes.length },
-                  { label: 'Transactions', value: caseData?.summary?.total_transactions || edges.length },
-                  { label: 'Findings', value: findings.length },
-                  { label: 'Evidence', value: evidence.length },
-                ].map(s => (
-                  <div key={s.label} className="bg-[var(--ct-surface)] rounded-lg p-3 border border-[var(--ct-outline-variant)]">
-                    <div className="text-lg font-bold text-white">{s.value}</div>
-                    <div className="text-[10px] text-slate-500">{s.label}</div>
-                  </div>
-                ))}
+            <div className="space-y-3 p-4 animate-fade-in">
+              <div className="flex items-start justify-between gap-3">
+                <div><h3 className="text-sm font-bold text-white">Investigation summary</h3><p className="mt-0.5 text-[10px] text-slate-500">Decision-ready case context</p></div>
+                <span className={`rounded border px-2 py-1 text-[9px] font-bold ${riskBadge.bg} ${riskBadge.text}`}>{riskCategory} RISK</span>
               </div>
-              <section className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3" aria-labelledby="assigned-investigator-heading">
-                <div id="assigned-investigator-heading" className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Assigned investigator</div>
-                {caseData.assignment?.display_name ? (
-                  <div className="mt-2">
-                    <div className="text-xs font-semibold text-white">{caseData.assignment.display_name}</div>
-                    <div className="mt-0.5 text-[10px] capitalize text-slate-400">{caseData.assignment.role?.replaceAll('_', ' ') || 'Role unavailable'}</div>
-                    <dl className="mt-2 grid grid-cols-2 gap-2 border-t border-[var(--ct-outline-variant)] pt-2 text-[10px]">
-                      <div>
-                        <dt className="text-slate-500">Case assigned</dt>
-                        <dd className="mt-0.5 text-slate-300">{caseData.assignment.assigned_at ? new Date(caseData.assignment.assigned_at).toLocaleString() : 'Unavailable'}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-slate-500">Last activity</dt>
-                        <dd className="mt-0.5 text-slate-300">{caseData.assignment.last_activity_at ? new Date(caseData.assignment.last_activity_at).toLocaleString() : 'Unavailable'}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-[10px] leading-relaxed text-slate-500">Assignment information is unavailable for this case.</p>
+
+              <section className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3" aria-labelledby="what-we-found-heading">
+                <div className="flex items-center justify-between gap-2">
+                  <div><div id="what-we-found-heading" className="text-[9px] font-bold uppercase tracking-widest text-slate-500">What we found</div><div className="mt-1 text-xs font-semibold text-white">{strongestFinding?.pattern_name || 'No suspicious pattern recorded'}</div></div>
+                  <button type="button" onClick={() => setActiveTab('findings')} className="min-h-10 rounded border border-[var(--ct-outline-variant)] px-2 text-[10px] font-semibold text-[var(--ct-primary)]">All findings</button>
+                </div>
+                <div className="mt-2 text-[9px] font-bold uppercase tracking-wide text-slate-500">Why it matters</div>
+                {strongestFinding ? <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{strongestFinding.description}</p> : <p className="mt-1 text-[11px] text-slate-400">No finding requires explanation yet.</p>}
+                {strongestFinding?.affected_wallets?.[0] && (
+                  <button type="button" onClick={() => selectWalletByAddress(strongestFinding.affected_wallets![0])} className="mt-2 flex min-h-10 w-full items-center justify-center gap-2 rounded border border-amber-500/30 bg-amber-500/10 px-3 text-[10px] font-bold text-amber-400">
+                    <AlertTriangle className="h-3.5 w-3.5" /> Explain WHY this was flagged
+                  </button>
                 )}
               </section>
+
+              <section className="rounded-lg border border-[var(--ct-outline-variant)] bg-white p-3" aria-labelledby="money-trail-heading">
+                <div className="flex items-center justify-between gap-2"><div><div id="money-trail-heading" className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Money trail</div><div className="mt-1 text-[10px] text-slate-400">Origin to likely destination</div></div><button type="button" onClick={() => setShowMoneyTrail(true)} className="min-h-10 rounded border border-[#8aa9a9] px-2 text-[10px] font-semibold text-[var(--ct-primary)]">Focus graph</button></div>
+                {primaryPath.length > 0 ? (
+                  <ol className="mt-2 space-y-1.5">
+                    {primaryPath.slice(0, 6).map((address, index) => {
+                      const node = nodes.find((item) => item.data.address === address)?.data;
+                      const movement = index > 0 ? transactions.find((transaction) => transaction.from_address === primaryPath[index - 1] && transaction.to_address === address) : undefined;
+                      const role = node?.is_reported ? 'Reported wallet' : node?.is_destination ? 'Likely service / exchange' : `Hop ${node?.hop_distance ?? index}`;
+                      return <li key={address} className="grid grid-cols-[1rem_1fr] gap-1.5 text-[10px]"><span className="font-mono text-[var(--ct-primary)]">{index === 0 ? '●' : '↓'}</span><button type="button" onClick={() => selectWalletByAddress(address)} className="min-w-0 text-left"><span className="flex items-center justify-between gap-2 font-semibold text-slate-300"><span>{role}</span>{movement && <span className="shrink-0 font-mono text-[9px] text-[var(--ct-primary)]">{movement.amount?.toFixed(3)} {movement.asset}</span>}</span><span className="block truncate font-mono text-slate-500">{address}</span></button></li>;
+                    })}
+                  </ol>
+                ) : <p className="mt-2 text-[10px] text-slate-500">No primary money trail is available.</p>}
+              </section>
+
+              <section className="grid grid-cols-2 gap-2" aria-label="Case outcome context">
+                <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2.5"><div className="text-[9px] uppercase tracking-wide text-slate-500">Status</div><div className="mt-1 text-xs font-semibold capitalize text-white">{caseData.status.replaceAll('_', ' ')}</div></div>
+                <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2.5"><div className="text-[9px] uppercase tracking-wide text-slate-500">Destination attribution</div><div className="mt-1 truncate text-xs font-semibold text-white">{destinationNode?.vasp_name || 'No attribution available'}</div><div className="mt-0.5 text-[9px] font-semibold text-slate-500">{attributionLabel(destinationNode?.vasp_attribution_status || destinationNode?.vasp_confidence)}</div></div>
+              </section>
+
+              <details className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3">
+                <summary className="cursor-pointer text-[10px] font-semibold text-slate-400">Case assignment</summary>
+                <div className="mt-2 text-xs font-semibold text-white">{caseData.assignment?.display_name || 'Assignment unavailable'}</div>
+                {caseData.assignment?.role && <div className="mt-0.5 text-[10px] capitalize text-slate-500">{caseData.assignment.role.replaceAll('_', ' ')}</div>}
+              </details>
             </div>
           )}
 
@@ -1109,15 +1179,15 @@ function InvestigateContent() {
                   ))}
                 </div>
               )}
-              {selectedNode.vasp_name && (
+              {(selectedNode.vasp_name || selectedNode.vasp_attribution_status || selectedNode.vasp_confidence) && (
                 <div className="bg-[var(--ct-surface)] rounded-lg p-3 border border-[#d9b9a5]">
                   <div className="text-[10px] uppercase tracking-widest text-purple-300 font-medium mb-1">Attribution</div>
-                  <div className="text-xs text-white">{selectedNode.vasp_name}</div>
-                  <div className="text-[10px] text-slate-400 mt-1">
-                    {(selectedNode.vasp_confidence || 'unknown').toUpperCase()} · {selectedNode.vasp_attribution_type || 'unclassified'}
-                  </div>
-                  {selectedNode.vasp_source && <div className="text-[10px] text-slate-500 mt-1">Source: {selectedNode.vasp_source}</div>}
-                  {selectedNode.vasp_supporting_evidence && <p className="text-[10px] text-slate-400 mt-1">{selectedNode.vasp_supporting_evidence}</p>}
+                  <div className="text-[10px] font-bold text-slate-300">{attributionLabel(selectedNode.vasp_attribution_status || selectedNode.vasp_confidence)}</div>
+                  <div className="mt-1 text-xs text-white">{selectedNode.vasp_name || 'No attribution available'}</div>
+                  {selectedNode.vasp_reasoning && <p className="mt-1 text-[10px] text-slate-400"><span className="font-semibold text-slate-500">Why:</span> {selectedNode.vasp_reasoning}</p>}
+                  {(selectedNode.vasp_source_reference || selectedNode.vasp_source) && <div className="mt-1 text-[10px] text-slate-500">Source: {selectedNode.vasp_source_reference || selectedNode.vasp_source}</div>}
+                  <div className="mt-1 text-[10px] text-slate-500">{selectedNode.vasp_attribution_status === 'known_verified' ? 'Verified from an authoritative source' : selectedNode.vasp_attribution_status === 'likely_inferred' ? 'Not independently verified' : 'Supporting attribution unavailable'}</div>
+                  {selectedNode.vasp_supporting_evidence && <p className="mt-1 text-[10px] text-slate-400">{selectedNode.vasp_supporting_evidence}</p>}
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">
@@ -1168,8 +1238,70 @@ function InvestigateContent() {
                       ))}
                     </>
                   )}
+                  {evidence.length > 0 && (
+                    <button type="button" onClick={() => setActiveTab('evidence')} className="ct-button-primary mt-2 flex min-h-11 w-full items-center justify-center gap-2 px-3 text-xs">
+                      <Bookmark className="h-3.5 w-3.5" /> View supporting evidence
+                    </button>
+                  )}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'recommendations' && (
+            <div className="space-y-3 p-4 animate-fade-in">
+              <div className="flex items-start justify-between gap-3">
+                <div><h3 className="text-sm font-bold text-white">Recommended next actions</h3><p className="mt-0.5 text-[10px] text-slate-500">Deterministic actions derived from this investigation’s evidence.</p></div>
+                <span className="rounded border border-[var(--ct-outline-variant)] px-2 py-1 text-[9px] font-bold text-[var(--ct-primary)]">{recommendations.length} PRIORITIZED</span>
+              </div>
+              <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-[10px] leading-relaxed text-slate-400">Recommendations are not generated by the Copilot. Each item below is linked to persisted findings, transactions, evidence, or readiness signals.</div>
+              {recommendations.length === 0 ? <p className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3 text-xs text-slate-500">No evidence-grounded next action is currently eligible.</p> : recommendations.slice(0, 3).map((item) => {
+                const linkedEvidence = evidence.find((entry) => item.evidence_ids.includes(entry.id));
+                const linkedTransaction = transactions.find((entry) => item.transaction_hashes.includes(entry.hash));
+                const review = () => {
+                  if (linkedEvidence) { selectEvidence(linkedEvidence); setActiveTab('evidence'); }
+                  else if (linkedTransaction) { setSelectedTransaction(linkedTransaction); setActiveTab('transactions'); }
+                  else if (item.type === 'prepare_asset_action_request' || item.type === 'preserve_supporting_evidence') setActiveTab('action');
+                  else setActiveTab('findings');
+                };
+                return <details key={item.recommendation_id} className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3" open={item.priority === 'high'}>
+                  <summary className="cursor-pointer list-none"><div className="flex items-start justify-between gap-2"><div><div className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Recommended next action</div><div className="mt-1 text-xs font-semibold text-white">{item.title}</div></div><span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase ${item.priority === 'high' ? 'border-red-500/30 text-red-300' : item.priority === 'medium' ? 'border-amber-500/30 text-amber-300' : 'border-slate-500/30 text-slate-400'}`}>{item.priority}</span></div></summary>
+                  <div className="mt-3 space-y-2 text-[10px]"><div><div className="font-bold uppercase tracking-wide text-slate-500">Action</div><div className="mt-1 text-slate-300">{item.action}</div></div><div><div className="font-bold uppercase tracking-wide text-slate-500">Why this?</div><div className="mt-1 leading-relaxed text-slate-400">{item.factual_reason}</div></div><div><div className="font-bold uppercase tracking-wide text-slate-500">Supporting evidence</div><div className="mt-1 font-mono text-slate-500">{linkedEvidence?.title || linkedTransaction?.hash || `${item.evidence_ids.length} evidence reference(s)`}</div></div><button type="button" onClick={review} className="min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Review supporting record</button></div>
+                </details>;
+              })}
+            </div>
+          )}
+
+          {activeTab === 'action' && (
+            <div className="space-y-3 p-4 animate-fade-in">
+              <div className="flex items-start justify-between gap-3">
+                <div><h3 className="text-sm font-bold text-white">Freeze Readiness</h3><p className="mt-0.5 text-[10px] text-slate-500">Investigation readiness for an external preservation/freeze request.</p></div>
+                <span className={`rounded border px-2 py-1 text-[9px] font-bold ${actionReadiness?.ready ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-amber-500/30 bg-amber-500/10 text-amber-400'}`}>{actionReadiness?.ready ? 'READY' : 'INCOMPLETE'}</span>
+              </div>
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-slate-400">This is operational readiness recorded from the current investigation. CryptoTrace does not execute or independently verify a blockchain freeze or external action.</div>
+              {actionReadiness ? (
+                <>
+                  <section className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3" aria-label="Freeze readiness facts">
+                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                      <div><div className="uppercase tracking-wide text-slate-500">Destination</div><div className="mt-1 break-all font-mono text-white">{actionReadiness.destination_wallet || 'UNKNOWN'}</div></div>
+                      <div><div className="uppercase tracking-wide text-slate-500">Attribution</div><div className="mt-1 font-semibold text-white">{attributionLabel(actionReadiness.attribution_status)}</div><div className="mt-1 text-slate-400">{actionReadiness.attribution_entity || 'No attribution available'}</div><div className="mt-0.5 text-[9px] text-slate-500">{actionReadiness.attribution_source_reference || actionReadiness.attribution_provenance || 'Source unavailable'} · {actionReadiness.attribution_status === 'known_verified' ? 'Verified' : actionReadiness.attribution_status === 'likely_inferred' ? 'Not independently verified' : 'Unknown'}</div></div>
+                      <div><div className="uppercase tracking-wide text-slate-500">Observed movement</div><div className="mt-1 text-white">{actionReadiness.observed_amount != null ? `${actionReadiness.observed_amount} ${actionReadiness.asset || 'asset'}` : 'NOT AVAILABLE'}</div></div>
+                      <div><div className="uppercase tracking-wide text-slate-500">Last movement</div><div className="mt-1 text-white">{actionReadiness.last_movement_at ? new Date(actionReadiness.last_movement_at).toLocaleString() : 'NOT AVAILABLE'}</div></div>
+                    </div>
+                  </section>
+                  <section className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3" aria-labelledby="readiness-checklist-heading">
+                    <div id="readiness-checklist-heading" className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Readiness checklist</div>
+                    <div className="mt-2 space-y-1.5">{actionReadiness.checks.map((check) => <div key={check.key} className="flex items-start gap-2 text-[10px]"><span className={check.complete ? 'text-green-400' : 'text-amber-400'}>{check.complete ? '✓' : '○'}</span><span className={check.complete ? 'text-slate-300' : 'text-slate-500'}>{check.label}</span></div>)}</div>
+                  </section>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button type="button" onClick={() => void createActionRequest('preservation_request')} disabled={!actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-bold text-[var(--ct-primary)] disabled:cursor-not-allowed disabled:opacity-40">{actionLoading ? 'Preparing…' : 'PRESERVE EVIDENCE'}</button>
+                    <button type="button" onClick={() => void createActionRequest('freeze_request')} disabled={!actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded bg-[var(--ct-primary)] px-3 text-[10px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">PREPARE FREEZE REQUEST</button>
+                  </div>
+                  {actionReadiness.evidence_ids.length === 0 && <p className="text-[10px] text-amber-400">No supporting evidence is available for a request.</p>}
+                </>
+              ) : <p className="text-xs text-slate-500">Run the investigation first to derive readiness from case data.</p>}
+              {actionMessage && <p role="status" className="rounded border border-[var(--ct-outline-variant)] bg-white p-2 text-[10px] text-[var(--ct-primary)]">{actionMessage}</p>}
+              {actionRequests.length > 0 && <section className="space-y-2" aria-labelledby="request-status-heading"><div id="request-status-heading" className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Request status</div>{actionRequests.map((item) => <div key={item.id} className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3"><div className="flex items-start justify-between gap-2"><div><div className="text-[10px] font-semibold text-white">{item.action_type === 'freeze_request' ? 'Freeze request' : 'Preservation request'}</div><div className="mt-1 break-all font-mono text-[9px] text-slate-500">{item.target_wallet}</div></div><span className="rounded border border-[var(--ct-outline-variant)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-300">{item.status.replaceAll('_', ' ')}</span></div><div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-slate-500"><div>Attribution<div className="font-semibold text-slate-300">{attributionLabel(item.attribution_status)}{item.attribution_entity ? ` · ${item.attribution_entity}` : ''}</div></div><div>Source<div className="font-semibold text-slate-300">{item.attribution_source_reference || item.attribution_provenance || 'Unknown'}</div></div></div><div className="mt-2 text-[10px] text-slate-500">{item.evidence_ids.length} evidence reference{item.evidence_ids.length === 1 ? '' : 's'} · Prepared for external submission</div>{item.status === 'draft' && <button type="button" onClick={() => void updateActionRequest(item.id, 'prepared', true)} disabled={actionLoading} className="mt-2 min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Prepare request</button>}{item.status === 'prepared' && <button type="button" onClick={() => void updateActionRequest(item.id, 'submitted')} disabled={actionLoading} className="mt-2 min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Record submitted</button>}{item.status === 'submitted' && <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => void updateActionRequest(item.id, 'acknowledged')} disabled={actionLoading} className="min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Record acknowledged</button><button type="button" onClick={() => void updateActionRequest(item.id, 'more_information_required')} disabled={actionLoading} className="min-h-10 rounded border border-amber-500/30 px-3 text-[10px] font-semibold text-amber-400">More information required</button><button type="button" onClick={() => void updateActionRequest(item.id, 'declined')} disabled={actionLoading} className="min-h-10 rounded border border-red-500/30 px-3 text-[10px] font-semibold text-red-400">Record declined</button></div>}{item.status === 'acknowledged' && <button type="button" onClick={() => void updateActionRequest(item.id, 'actioned')} disabled={actionLoading} className="mt-2 min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Record actioned</button>}<p className="mt-2 text-[9px] leading-relaxed text-slate-500">Operational status recorded in CryptoTrace. External action not independently verified.</p></div>)}</section>}
             </div>
           )}
 
@@ -1379,7 +1511,7 @@ function InvestigateContent() {
                   <h3 className="text-sm font-bold text-white">Investigation Timeline</h3>
                   <p className="text-[10px] text-slate-500 mt-0.5">Chronological events from the current case</p>
                 </div>
-                <span className="text-[9px] uppercase tracking-wide text-slate-500">{timeline.length} events</span>
+                <button type="button" onClick={startReplay} className="ct-button-primary flex min-h-10 items-center gap-1.5 px-3 text-[10px]"><Play className="h-3 w-3" /> Replay</button>
               </div>
               {timeline.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-[var(--ct-outline-variant)] px-3 py-4 text-xs text-[var(--ct-ink-muted)]">No timeline events are available yet. Run the investigation first.</p>
@@ -1434,9 +1566,27 @@ function InvestigateContent() {
                         {event.resource_id ? ` · ${event.resource_id.slice(0, 12)}…` : ''}
                       </div>
                       {event.details && Object.keys(event.details).length > 0 && (
-                        <div className="mt-1.5 break-words font-mono text-[10px] text-slate-500">
-                          {JSON.stringify(event.details)}
-                        </div>
+                        <details className="mt-2 rounded border border-[var(--ct-outline-variant)] bg-white p-2 text-[10px] text-[var(--ct-ink-muted)]">
+                          <summary className="min-h-8 cursor-pointer select-none py-1 font-medium text-[var(--ct-primary)]">
+                            View event details
+                          </summary>
+                          <dl className="mt-2 grid grid-cols-[minmax(5rem,auto)_1fr] gap-x-3 gap-y-1 border-t border-[var(--ct-outline-variant)] pt-2">
+                            {Object.entries(event.details).map(([key, value]) => (
+                              <Fragment key={key}>
+                                <dt className="font-medium text-[var(--ct-ink)]">{key.replaceAll('_', ' ')}</dt>
+                                <dd className="min-w-0 break-words font-mono">
+                                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                </dd>
+                              </Fragment>
+                            ))}
+                          </dl>
+                          <details className="mt-2 border-t border-[var(--ct-outline-variant)] pt-2">
+                            <summary className="min-h-8 cursor-pointer select-none py-1">Raw JSON</summary>
+                            <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-[var(--ct-surface)] p-2 font-mono">
+                              {JSON.stringify(event.details, null, 2)}
+                            </pre>
+                          </details>
+                        </details>
                       )}
                     </div>
                   ))}
@@ -1596,7 +1746,9 @@ function InvestigateContent() {
                         : 'bg-[var(--ct-surface)] text-[var(--ct-ink-muted)] border border-[var(--ct-outline-variant)]'
                       }`}
                     >
-                      <div className="whitespace-pre-wrap">{msg.content}</div>
+                      {msg.role === 'assistant'
+                        ? <SafeMarkdown content={msg.content} />
+                        : <div className="whitespace-pre-wrap">{msg.content}</div>}
                     </div>
                   </div>
                 ))}

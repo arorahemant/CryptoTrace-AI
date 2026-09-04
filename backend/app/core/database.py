@@ -111,7 +111,7 @@ async def init_db():
         "users", "cases", "wallets", "transactions", "fund_flows",
         "pattern_findings", "vasp_attributions", "risk_assessments",
         "evidence", "investigation_events", "ai_conversations", "reports",
-        "audit_logs",
+        "audit_logs", "asset_action_requests",
     }
 
     def upgrade_schema(connection):
