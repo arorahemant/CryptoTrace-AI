@@ -2,7 +2,9 @@
 
 import { Fragment, Suspense, useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import api from '@/lib/api';
+import api, { ApiError } from '@/lib/api';
+import { CapabilityNotice } from '@/components/CapabilityNotice';
+import { capabilityLabel, hasAnalysis, type CapabilityState } from '@/lib/capabilities';
 import { ReplayBar } from '@/components/investigation/ReplayBar';
 import { SafeMarkdown } from '@/components/investigation/SafeMarkdown';
 import {
@@ -115,7 +117,7 @@ interface CaseAssignment {
   last_activity_at?: string | null;
   history_available: boolean;
 }
-interface CaseDetail { id: string; case_number: string; title: string; status: string; is_demo: boolean; reported_wallet: string; blockchain?: string; asset?: string | null; source_submission_reference?: string | null; analysis_status?: string; analysis_message?: string; assignment?: CaseAssignment; summary?: { risk_level?: string; total_wallets?: number; total_transactions?: number }; }
+interface CaseDetail { capability: CapabilityState; lifecycle: 'open' | 'closed'; permissions: string[]; id: string; case_number: string; title: string; status: string; is_demo: boolean; reported_wallet: string; blockchain?: string; asset?: string | null; source_submission_reference?: string | null; analysis_status?: string; analysis_message?: string; assignment?: CaseAssignment; summary?: { risk_level?: string; total_wallets?: number; total_transactions?: number }; }
 interface WhyData { wallet_address: string; reasons: string[]; findings?: FindingData[]; }
 interface ReportSection { title: string; section_type: string; content: string; }
 interface InvestigationData {
@@ -279,7 +281,7 @@ function InvestigateContent() {
       await loadAuditLog();
 
       // If already investigated, load data
-      if (data.status === 'investigating' || data.status === 'review' || data.status === 'completed') {
+      if (hasAnalysis(data.capability) || data.capability.result_state === 'empty') {
         await loadInvestigationData(data);
         await loadActionData();
         await loadExistingReport();
@@ -391,7 +393,7 @@ function InvestigateContent() {
     try {
       const result = await api.investigate(caseId);
       setInvestigation(result);
-      setCaseData((prev) => prev ? { ...prev, status: 'investigating' } : prev);
+      setCaseData((prev) => prev ? { ...prev, status: result.status, capability: result.capability } : prev);
 
       // Build graph from result
       if (result.graph) {
@@ -404,6 +406,7 @@ function InvestigateContent() {
       await loadActionData();
       setActiveTab('overview');
     } catch (err) {
+      if (err instanceof ApiError && err.capability) setCaseData(prev => prev ? { ...prev, capability: err.capability! } : prev);
       console.error('Investigation failed', err);
       setActionError(err instanceof Error ? err.message : 'Unable to complete the investigation.');
     } finally {
@@ -852,9 +855,10 @@ function InvestigateContent() {
     );
   }
 
-  const hasInvestigation = nodes.length > 0;
+  const hasInvestigation = hasAnalysis(caseData?.capability) && nodes.length > 0;
+  const canMutate = !!caseData?.permissions?.includes('case.write') && caseData.lifecycle !== 'closed';
   const riskBadge = getRiskBadge(investigation?.risk?.overall || caseData?.summary?.risk_level || 'low');
-  const analysisAvailable = caseData?.analysis_status === 'analysis_available';
+  const analysisAvailable = caseData?.capability?.provider_state === 'available';
   const traceHopCount = transactions.reduce((maxHop, transaction) => Math.max(maxHop, transaction.hop_number ?? 0), 0);
   const suspiciousTransactionCount = transactions.filter((transaction) => transaction.is_suspicious).length;
   const linkedEvidenceCount = evidence.filter((item) => item.transaction_hash || item.finding_id).length;
@@ -905,7 +909,7 @@ function InvestigateContent() {
           {!hasInvestigation ? (
             <button
               onClick={runInvestigation}
-              disabled={investigating || !analysisAvailable}
+              disabled={!canMutate || investigating || !analysisAvailable}
               className="ct-button-primary flex items-center gap-1.5 px-4 py-1.5 text-xs disabled:opacity-50"
             >
               {investigating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
@@ -924,6 +928,16 @@ function InvestigateContent() {
         </div>
       )}
 
+      <div className="shrink-0 px-4 py-2">
+        <CapabilityNotice capability={caseData?.capability} />
+        <div className="mt-1 flex items-center justify-between text-xs">
+          <span>Case: {caseData?.lifecycle === 'closed' ? 'Closed by investigator' : 'Open'}{!canMutate ? ' ? Read-only access' : ''}</span>
+          {canMutate && <button type="button" className="ct-button-secondary px-3" onClick={async () => {
+            if (!window.confirm('Close this case? Processing results do not establish recovery or external action.')) return;
+            try { await api.closeCase(caseId); await loadCase(); } catch (err) { setActionError(err instanceof Error ? err.message : 'Unable to close case'); }
+          }}>Close case</button>}
+        </div>
+      </div>
       {hasInvestigation && (
         <section className="ct-investigation-story shrink-0 border-b border-[var(--ct-outline-variant)] bg-white px-4 py-3" aria-labelledby="case-story-heading">
           <div className="mx-auto grid max-w-[1600px] grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-[minmax(300px,1.8fr)_repeat(6,minmax(76px,0.5fr))] xl:items-stretch">
@@ -934,7 +948,7 @@ function InvestigateContent() {
                 {caseData.is_demo && <span className="ct-status-chip bg-[var(--ct-warning-surface)] text-[var(--risk-medium)]">Demo data</span>}
               </div>
               <p className="mt-1.5 max-w-3xl text-xs leading-5 text-[var(--ct-ink-muted)]">{investigationNarrative}</p>
-              <p className="mt-1 text-[10px] text-[var(--ct-outline)]">Network / asset · {caseData.blockchain || 'UNKNOWN'} / {caseData.asset || 'UNKNOWN'} · {caseData.analysis_message || 'Analysis capability unavailable.'}</p>
+              <p className="mt-1 text-[10px] text-[var(--ct-outline)]">Network / asset · {caseData.blockchain || 'UNKNOWN'} / {caseData.asset || 'UNKNOWN'} · {capabilityLabel(caseData.capability)}</p>
               <p className="mt-1 truncate font-mono text-[10px] text-[var(--ct-outline)]" title={caseData.reported_wallet}>Reported wallet · {caseData.reported_wallet}</p>
             </div>
             {[
@@ -1007,10 +1021,10 @@ function InvestigateContent() {
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2">Ready to investigate</h3>
                 <p className="text-slate-400 text-sm mb-1">Wallet: <span className="font-mono text-blue-400">{caseData?.reported_wallet}</span></p>
-                <p className="text-slate-500 text-xs mb-6">{analysisAvailable ? 'Run the investigation to trace available blockchain transactions.' : (caseData?.analysis_message || 'Live analysis is not connected for this network.')}</p>
+                <p className="text-slate-500 text-xs mb-6">{analysisAvailable ? 'Run the demonstration analysis on synthetic transactions.' : capabilityLabel(caseData?.capability)}</p>
                 <button
                   onClick={runInvestigation}
-                  disabled={investigating || !analysisAvailable}
+                  disabled={!canMutate || investigating || !analysisAvailable}
                   className="ct-button-primary px-8 py-3 text-sm disabled:opacity-50"
                 >
                   {investigating ? (
@@ -1131,7 +1145,7 @@ function InvestigateContent() {
                     {primaryPath.slice(0, 6).map((address, index) => {
                       const node = nodes.find((item) => item.data.address === address)?.data;
                       const movement = index > 0 ? transactions.find((transaction) => transaction.from_address === primaryPath[index - 1] && transaction.to_address === address) : undefined;
-                      const role = node?.is_reported ? 'Reported wallet' : node?.is_destination ? 'Likely service / exchange' : `Hop ${node?.hop_distance ?? index}`;
+                      const role = node?.is_reported ? 'Reported wallet' : node?.is_destination ? (node.vasp_name ? 'Attributed destination (review required)' : 'Observed boundary wallet') : `Hop ${node?.hop_distance ?? index}`;
                       return <li key={address} className="grid grid-cols-[1rem_1fr] gap-1.5 text-[10px]"><span className="font-mono text-[var(--ct-primary)]">{index === 0 ? '●' : '↓'}</span><button type="button" onClick={() => selectWalletByAddress(address)} className="min-w-0 text-left"><span className="flex items-center justify-between gap-2 font-semibold text-slate-300"><span>{role}</span>{movement && <span className="shrink-0 font-mono text-[9px] text-[var(--ct-primary)]">{movement.amount?.toFixed(3)} {movement.asset}</span>}</span><span className="block truncate font-mono text-slate-500">{address}</span></button></li>;
                     })}
                   </ol>
@@ -1296,14 +1310,14 @@ function InvestigateContent() {
                     <div className="mt-2 space-y-1.5">{actionReadiness.checks.map((check) => <div key={check.key} className="flex items-start gap-2 text-[10px]"><span className={check.complete ? 'text-green-400' : 'text-amber-400'}>{check.complete ? '✓' : '○'}</span><span className={check.complete ? 'text-slate-300' : 'text-slate-500'}>{check.label}</span></div>)}</div>
                   </section>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <button type="button" onClick={() => void createActionRequest('preservation_request')} disabled={!actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-bold text-[var(--ct-primary)] disabled:cursor-not-allowed disabled:opacity-40">{actionLoading ? 'Preparing…' : 'PRESERVE EVIDENCE'}</button>
-                    <button type="button" onClick={() => void createActionRequest('freeze_request')} disabled={!actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded bg-[var(--ct-primary)] px-3 text-[10px] font-bold text-[#ffffff] disabled:cursor-not-allowed disabled:opacity-40">PREPARE FREEZE REQUEST</button>
+                    <button type="button" onClick={() => void createActionRequest('preservation_request')} disabled={!canMutate || !actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-bold text-[var(--ct-primary)] disabled:cursor-not-allowed disabled:opacity-40">{actionLoading ? 'Preparing…' : 'RECORD PRESERVATION REQUEST'}</button>
+                    <button type="button" onClick={() => void createActionRequest('freeze_request')} disabled={!canMutate || !actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded bg-[var(--ct-primary)] px-3 text-[10px] font-bold text-[#ffffff] disabled:cursor-not-allowed disabled:opacity-40">RECORD FREEZE REQUEST</button>
                   </div>
                   {actionReadiness.evidence_ids.length === 0 && <p className="text-[10px] text-amber-400">No supporting evidence is available for a request.</p>}
                 </>
               ) : <p className="text-xs text-slate-500">Run the investigation first to derive readiness from case data.</p>}
               {actionMessage && <p role="status" className="rounded border border-[var(--ct-outline-variant)] bg-white p-2 text-[10px] text-[var(--ct-primary)]">{actionMessage}</p>}
-              {actionRequests.length > 0 && <section className="space-y-2" aria-labelledby="request-status-heading"><div id="request-status-heading" className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Request status</div>{actionRequests.map((item) => <div key={item.id} className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3"><div className="flex items-start justify-between gap-2"><div><div className="text-[10px] font-semibold text-white">{item.action_type === 'freeze_request' ? 'Freeze request' : 'Preservation request'}</div><div className="mt-1 break-all font-mono text-[9px] text-slate-500">{item.target_wallet}</div></div><span className="rounded border border-[var(--ct-outline-variant)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-300">{item.status.replaceAll('_', ' ')}</span></div><div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-slate-500"><div>Attribution<div className="font-semibold text-slate-300">{attributionLabel(item.attribution_status)}{item.attribution_entity ? ` · ${item.attribution_entity}` : ''}</div></div><div>Source<div className="font-semibold text-slate-300">{item.attribution_source_reference || item.attribution_provenance || 'Unknown'}</div></div></div><div className="mt-2 text-[10px] text-slate-500">{item.evidence_ids.length} evidence reference{item.evidence_ids.length === 1 ? '' : 's'} · Prepared for external submission</div>{item.status === 'draft' && <button type="button" onClick={() => void updateActionRequest(item.id, 'prepared', true)} disabled={actionLoading} className="mt-2 min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Prepare request</button>}{item.status === 'prepared' && <button type="button" onClick={() => void updateActionRequest(item.id, 'submitted')} disabled={actionLoading} className="mt-2 min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Record submitted</button>}{item.status === 'submitted' && <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => void updateActionRequest(item.id, 'acknowledged')} disabled={actionLoading} className="min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Record acknowledged</button><button type="button" onClick={() => void updateActionRequest(item.id, 'more_information_required')} disabled={actionLoading} className="min-h-10 rounded border border-amber-500/30 px-3 text-[10px] font-semibold text-amber-400">More information required</button><button type="button" onClick={() => void updateActionRequest(item.id, 'declined')} disabled={actionLoading} className="min-h-10 rounded border border-red-500/30 px-3 text-[10px] font-semibold text-red-400">Record declined</button></div>}{item.status === 'acknowledged' && <button type="button" onClick={() => void updateActionRequest(item.id, 'actioned')} disabled={actionLoading} className="mt-2 min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Record actioned</button>}<p className="mt-2 text-[9px] leading-relaxed text-slate-500">Operational status recorded in CryptoTrace. External action not independently verified.</p></div>)}</section>}
+              {actionRequests.length > 0 && <section className="space-y-2" aria-labelledby="request-status-heading"><div id="request-status-heading" className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Request status</div>{actionRequests.map((item) => <div key={item.id} className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3"><div className="flex items-start justify-between gap-2"><div><div className="text-[10px] font-semibold text-white">{item.action_type === 'freeze_request' ? 'Freeze request' : 'Preservation request'}</div><div className="mt-1 break-all font-mono text-[9px] text-slate-500">{item.target_wallet}</div></div><span className="rounded border border-[var(--ct-outline-variant)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-300">{item.status.replaceAll('_', ' ')}</span></div><div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-slate-500"><div>Attribution<div className="font-semibold text-slate-300">{attributionLabel(item.attribution_status)}{item.attribution_entity ? ` · ${item.attribution_entity}` : ''}</div></div><div>Source<div className="font-semibold text-slate-300">{item.attribution_source_reference || item.attribution_provenance || 'Unknown'}</div></div></div><div className="mt-2 text-[10px] text-slate-500">{item.evidence_ids.length} evidence reference{item.evidence_ids.length === 1 ? '' : 's'} · Local request record; external submission is separate</div>{item.status === 'draft' && <button type="button" onClick={() => void updateActionRequest(item.id, 'prepared', true)} disabled={!canMutate || actionLoading} className="mt-2 min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Prepare request</button>}{item.status === 'prepared' && <button type="button" onClick={() => void updateActionRequest(item.id, 'submitted')} disabled={!canMutate || actionLoading} className="mt-2 min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Record submitted</button>}{item.status === 'submitted' && <div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => void updateActionRequest(item.id, 'acknowledged')} disabled={!canMutate || actionLoading} className="min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Record acknowledged</button><button type="button" onClick={() => void updateActionRequest(item.id, 'more_information_required')} disabled={!canMutate || actionLoading} className="min-h-10 rounded border border-amber-500/30 px-3 text-[10px] font-semibold text-amber-400">More information required</button><button type="button" onClick={() => void updateActionRequest(item.id, 'declined')} disabled={!canMutate || actionLoading} className="min-h-10 rounded border border-red-500/30 px-3 text-[10px] font-semibold text-red-400">Record declined</button></div>}{item.status === 'acknowledged' && <button type="button" onClick={() => void updateActionRequest(item.id, 'actioned')} disabled={!canMutate || actionLoading} className="mt-2 min-h-10 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-semibold text-[var(--ct-primary)]">Record actioned</button>}<p className="mt-2 text-[9px] leading-relaxed text-slate-500">Operational status recorded in CryptoTrace. External action not independently verified.</p></div>)}</section>}
             </div>
           )}
 
@@ -1335,7 +1349,7 @@ function InvestigateContent() {
                   <span>{selectedTransaction.timestamp ? new Date(selectedTransaction.timestamp).toLocaleString() : 'Timestamp unavailable'}</span>
                   {selectedTransaction.source && <span>{selectedTransaction.source}</span>}
                 </div>
-                <button type="button" onClick={() => void saveTransactionEvidence(selectedTransaction)} disabled={savingEvidence} className="mt-1 inline-flex min-h-10 items-center gap-1.5 text-[10px] text-cyan-400 hover:text-cyan-300 disabled:opacity-50"><Bookmark className="w-3 h-3" /> {savingEvidence ? 'Saving…' : 'SAVE EVIDENCE'}</button>
+                <button type="button" onClick={() => void saveTransactionEvidence(selectedTransaction)} disabled={!canMutate || savingEvidence} className="mt-1 inline-flex min-h-10 items-center gap-1.5 text-[10px] text-cyan-400 hover:text-cyan-300 disabled:opacity-50"><Bookmark className="w-3 h-3" /> {savingEvidence ? 'Saving…' : 'SAVE EVIDENCE'}</button>
               </div>
             </div>
           )}
@@ -1455,7 +1469,7 @@ function InvestigateContent() {
                   </div>
                   <div className="text-right text-[10px] text-slate-500">
                     <div>{linkedEvidenceCount} linked</div>
-                    <div>FACT records</div>
+                    <div>Evidence records</div>
                   </div>
                 </div>
                 <p className="mt-2 text-[10px] leading-relaxed text-slate-400">Select a record to inspect its persisted source, timestamp, and case-linked transaction context.</p>
@@ -1464,7 +1478,7 @@ function InvestigateContent() {
                 <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3">
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <div className="text-[10px] uppercase tracking-widest text-cyan-400 font-medium">Selected evidence</div>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">FACT</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">EVIDENCE RECORD</span>
                   </div>
                   <div className="text-xs text-white font-medium">{selectedEvidence.title}</div>
                   {selectedEvidence.transaction_hash && <div className="text-[10px] text-slate-500 font-mono break-all mt-1">{selectedEvidence.transaction_hash}</div>}
@@ -1491,7 +1505,7 @@ function InvestigateContent() {
                   <div className="flex items-center gap-2 mb-1">
                     <Bookmark className="w-3 h-3 text-blue-400" />
                     <span className="text-xs font-medium text-white">{e.title}</span>
-                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">FACT</span>
+                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">EVIDENCE RECORD</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed">{e.description}</p>
                   {e.reason && <p className="text-[10px] text-cyan-400 mt-1">{e.reason}</p>}
@@ -1606,7 +1620,7 @@ function InvestigateContent() {
                   <p className="text-[10px] text-slate-500 mt-0.5">Source → movement → destination, ordered by traced hop</p>
                 </div>
                 <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[9px] font-medium text-amber-400">
-                  {caseData?.is_demo ? 'DEMO DATA' : 'CASE DATA'}
+                  {capabilityLabel(caseData?.capability)}
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-2" aria-label="Transaction trace summary">
@@ -1672,7 +1686,7 @@ function InvestigateContent() {
                     <button
                       type="button"
                       onClick={(event) => { event.stopPropagation(); void saveTransactionEvidence(t); }}
-                      disabled={savingEvidence}
+                      disabled={!canMutate || savingEvidence}
                       className="mt-2 inline-flex min-h-10 items-center gap-1.5 text-[10px] text-blue-400 hover:text-blue-300 disabled:opacity-50"
                     >
                       <Bookmark className="w-3 h-3" /> {savingEvidence ? 'Saving…' : 'SAVE EVIDENCE'}
@@ -1693,7 +1707,7 @@ function InvestigateContent() {
                     <h3 className="text-sm font-bold text-white">AI Investigation Copilot</h3>
                     <p className="text-[10px] text-slate-500 mt-0.5">Grounded in this case&apos;s findings, flow, and evidence</p>
                   </div>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-400">AI SUMMARY</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-400">STRUCTURED EXPLANATION</span>
                 </div>
                 {caseData?.is_demo && <p className="mt-2 text-[10px] text-amber-400">DEMO DATA context · verify conclusions against the evidence trail.</p>}
                 <div className="mt-3 grid grid-cols-3 gap-2" aria-label="Copilot grounding context">
@@ -1770,13 +1784,13 @@ function InvestigateContent() {
                     onChange={(e) => setAiInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && askAI()}
                     aria-label="Ask the investigation copilot"
-                    disabled={!hasInvestigation || aiLoading}
+                    disabled={!canMutate || !hasInvestigation || aiLoading}
                     maxLength={1000}
                     placeholder="Ask about the investigation..."
                     className="flex-1 px-3 py-2 bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg text-xs text-[var(--ct-ink)]
                       focus:outline-none focus:border-blue-500 placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                   />
-                  <button type="button" onClick={() => askAI()} disabled={!hasInvestigation || aiLoading} aria-label="Send question to investigation copilot" className="min-h-10 min-w-10 flex items-center justify-center p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+                  <button type="button" onClick={() => askAI()} disabled={!canMutate || !hasInvestigation || aiLoading} aria-label="Send question to investigation copilot" className="min-h-10 min-w-10 flex items-center justify-center p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
                     <Send className="w-3 h-3" />
                   </button>
                 </div>
@@ -1800,7 +1814,7 @@ function InvestigateContent() {
                   <p className="text-xs text-slate-500 mb-1">No report generated yet</p>
                   <p className="text-[10px] text-slate-600 mb-4">{hasInvestigation ? 'Generate a report after reviewing the case evidence.' : 'Run the investigation before generating a report.'}</p>
                   {hasInvestigation && (
-                    <button type="button" onClick={generateReport} disabled={generatingReport}
+                    <button type="button" onClick={generateReport} disabled={!canMutate || generatingReport}
                       className="min-h-10 px-4 py-2 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-medium hover:bg-green-600/30 disabled:opacity-50">
                       {generatingReport ? 'Generating...' : 'Generate Report'}
                     </button>

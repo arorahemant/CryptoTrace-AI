@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "CryptoTrace AI"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+    APP_ENV: str = "local"
+    SEED_DEMO_ACCOUNTS: bool = False
     API_PREFIX: str = "/api/v1"
     # Comma-separated exact browser/native origins. Demo mode defaults to the
     # local frontend; production must provide its deployed origin(s).
@@ -94,6 +96,12 @@ class Settings(BaseSettings):
         else:
             self.SECRET_KEY = configured_secret
 
+        if self.APP_ENV not in {"local", "staging", "production"}:
+            raise ValueError("APP_ENV must be local, staging, or production")
+        if self.SEED_DEMO_ACCOUNTS and (self.APP_ENV != "local" or not self.DEMO_MODE):
+            raise ValueError("Demo account seeding requires APP_ENV=local and DEMO_MODE=true")
+        if self.APP_ENV != "local" and _is_unsafe_secret(configured_secret):
+            raise ValueError("Hosted environments require a configured random SECRET_KEY")
         if not self.DEMO_MODE:
             database_url = (self.DATABASE_URL or "").strip()
             if not database_url:
@@ -117,6 +125,10 @@ class Settings(BaseSettings):
             # startup fails before the FastAPI app is created.
             self.cors_origins
         return self
+
+    @property
+    def demo_accounts_allowed(self) -> bool:
+        return self.APP_ENV == "local" and self.DEMO_MODE and self.SEED_DEMO_ACCOUNTS
 
     @property
     def cors_origins(self) -> list[str]:

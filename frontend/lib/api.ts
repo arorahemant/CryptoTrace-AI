@@ -1,3 +1,9 @@
+import type { CapabilityState, NetworkCapability } from './capabilities';
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public code?: string, public capability?: CapabilityState) { super(message); }
+}
+
 /**
  * CryptoTrace AI - API Client
  * Centralized API communication layer.
@@ -19,6 +25,12 @@ interface ApiOptions {
 }
 
 class ApiClient {
+  async capabilities(): Promise<{ networks: NetworkCapability[]; demo_login_available: boolean }> {
+    return this.request('/capabilities');
+  }
+  async currentUser() { return this.request('/auth/me'); }
+  async closeCase(caseId: string) { return this.request(`/cases/${caseId}/close`, { method: 'POST' }); }
+
   private token: string | null = null;
 
   setToken(token: string) {
@@ -73,7 +85,8 @@ class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-      throw new Error(error.detail || `API Error: ${response.status}`);
+      const detail = error.detail;
+      throw new ApiError(typeof detail === 'string' ? detail : detail?.message || `API Error: ${response.status}`, response.status, detail?.code, detail?.capability);
     }
 
     return response.json();

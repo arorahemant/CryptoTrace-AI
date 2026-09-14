@@ -15,6 +15,7 @@ from app.models.models import (
     AIConversation, FundFlow,
 )
 from app.core.config import settings
+from app.services.attribution_service import normalize_attribution
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +69,6 @@ class AIService:
             answer_data = self._welcome_answer(context_available=True, context=context)
         elif not self._has_supported_intent(question):
             answer_data = self._scope_answer(context)
-        elif settings.OPENAI_API_KEY:
-            answer_data = await self._query_llm(question, context)
         else:
             answer_data = self._generate_structured_answer(question, context)
 
@@ -82,6 +81,7 @@ class AIService:
         )
         self.db.add(assistant_msg)
 
+        answer_data["output_kind"] = "deterministic_explanation"
         return answer_data
 
     @staticmethod
@@ -295,8 +295,8 @@ class AIService:
             "vasp_attributions": [
                 {
                     "wallet": v.wallet_address,
-                    "entity": v.entity_name,
-                    "confidence": v.confidence.value if v.confidence else "unknown",
+                    "entity": normalize_attribution(v)["entity_name"],
+                    "confidence": normalize_attribution(v)["confidence"],
                     "source": v.source,
                 }
                 for v in vasps

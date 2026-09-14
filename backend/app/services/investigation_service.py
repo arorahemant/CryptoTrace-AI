@@ -17,6 +17,7 @@ from app.models.models import (
     CaseStatus, Blockchain, PatternType, Severity, RiskCategory,
     AttributionConfidence,
 )
+from app.core.capabilities import analysis_summary
 from app.providers import get_provider
 from app.providers.base import BlockchainProvider
 from app.providers.demo import DemoProvider
@@ -114,6 +115,7 @@ class InvestigationService:
 
         # Update case status
         case.status = CaseStatus.INVESTIGATING
+        case.analysis_summary = {"processing_state": "running", "result_state": "not_available"}
         await self.db.flush()
 
         reported_wallet = case.reported_wallet
@@ -205,11 +207,8 @@ class InvestigationService:
             risk_data=risk_results,
         )
 
-        case.status = (
-            CaseStatus.REVIEW
-            if stats.get("trace_status") == "partial"
-            else CaseStatus.COMPLETED
-        )
+        case.status = CaseStatus.REVIEW
+        case.analysis_summary = analysis_summary(stats, raw_transactions)
         await self.db.flush()
 
         overall_risk = self.risk_engine.get_overall_risk(risk_results)
@@ -248,7 +247,7 @@ class InvestigationService:
 
     async def _has_persisted_investigation(self, case: Case) -> bool:
         """Return whether this case already has an investigation snapshot."""
-        if case.status in (CaseStatus.COMPLETED, CaseStatus.REVIEW):
+        if (case.analysis_summary or {}).get("processing_state") == "completed":
             return True
 
         # Older demo databases predate the completed/review status update.
@@ -372,7 +371,8 @@ class InvestigationService:
         ]
 
         max_hop = max((tx.get("hop_number", 0) or 0 for tx in raw_transactions), default=0)
-        trace_status = "partial" if case.status == CaseStatus.REVIEW else "complete"
+        saved_summary = case.analysis_summary or {}
+        trace_status = "partial" if saved_summary.get("result_state") in {"partial", "stale"} or not saved_summary else "complete"
         stats = {
             "total_transactions": len(raw_transactions),
             "total_wallets": len(raw_wallets),
@@ -400,6 +400,8 @@ class InvestigationService:
             risk_data=risk_results,
         )
         overall_risk = self.risk_engine.get_overall_risk(risk_results)
+
+        stats.update(saved_summary.get("stats", {}))
 
         return {
             "case_id": str(case.id),

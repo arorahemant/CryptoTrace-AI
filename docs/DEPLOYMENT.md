@@ -85,7 +85,9 @@ the current source. Backend keys must never be prefixed with
 | Variable | Staging requirement | Production requirement | Notes |
 |---|---|---|---|
 | `PYTHON_VERSION` | `3.12.14` | `3.12.14` until the dependency stack is deliberately revalidated | Render service-level runtime pin; non-secret and fully qualified. |
-| `DEMO_MODE` | Explicitly `true` | `false` only after live provider integration | Demo accounts/data are allowed only in staging/demo. Non-demo startup currently refuses to run because only `DemoProvider` exists. |
+| `APP_ENV` | `staging` | `production` | Only `local` may enable privileged demo accounts. |
+| `DEMO_MODE` | Explicitly `true` | `false` only after live provider integration | Demo data may be used in staging, but privileged demo account seeding is local-only. Non-demo startup currently refuses to run because only `DemoProvider` exists. |
+| `SEED_DEMO_ACCOUNTS` | `false` | `false` | `true` is accepted only with `APP_ENV=local` and `DEMO_MODE=true`. |
 | `DEBUG` | `false` recommended | `false` | Production configuration rejects `true`. |
 | `DATABASE_URL` | Managed PostgreSQL URL | Required managed PostgreSQL URL | The runtime accepts generic `postgresql://` input and normalizes it to the asyncpg dialect. SQLite is not allowed when `DEMO_MODE=false`. |
 | `SECRET_KEY` | Random injected value recommended | Required random value, at least 32 characters | Never commit it. Demo mode can generate an ephemeral process key. |
@@ -195,7 +197,9 @@ before the PostgreSQL reliability gate is run:
 ```text
 DATABASE_URL=<cryptotrace-postgres internal connection URL; secret>
 USE_SQLITE=false
+APP_ENV=staging
 DEMO_MODE=true
+SEED_DEMO_ACCOUNTS=false
 DEBUG=false
 SECRET_KEY=<random value of at least 32 characters; secret>
 CORS_ORIGINS=https://cryptotrace-frontend.onrender.com,https://localhost
@@ -205,6 +209,6 @@ PYTHON_VERSION=3.12.14
 PostgreSQL remains unverified until a redeployed backend logs
 `Database schema ready (backend: postgresql)`, the hosted vertical slice is
 exercised, and the created case remains retrievable after another Render
-service instance is started. No Alembic configuration or migration history
-exists yet; the staging database currently uses the guarded `create_all`
-bootstrap described above.
+service instance is started. The application applies versioned Alembic
+migrations through `0007_access_capability` during startup; hosted execution
+of that migration remains unverified.

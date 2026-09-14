@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.cases import _get_authorized_case, _get_user
 from app.core.audit import record_audit_event
 from app.core.database import get_db
+from app.core.capabilities import capability_payload
 from app.models.models import (
     AssetActionRequest, AssetActionStatus, AssetActionType, Case, Evidence,
     PatternFinding, Transaction, User, VASPAttribution, Wallet,
@@ -103,6 +104,7 @@ async def _case_context(db: AsyncSession, case: Case) -> dict:
         {"key": "attribution_available", "label": "Attribution available", "complete": has_attribution},
     ]
     return {
+        "capability": capability_payload(case),
         "case_id": case.id,
         "ready": all(item["complete"] for item in checks),
         "destination_wallet": destination.address if destination else None,
@@ -127,8 +129,11 @@ async def _case_context(db: AsyncSession, case: Case) -> dict:
     }
 
 
-def _serialize(request: AssetActionRequest) -> dict:
+async def _serialize(request: AssetActionRequest, db: AsyncSession) -> dict:
+    case = await db.get(Case, request.case_id)
     return {
+        "capability": capability_payload(case),
+        "external_action_verified": False,
         "id": request.id,
         "case_id": request.case_id,
         "actor_id": request.actor_id,
@@ -152,8 +157,8 @@ def _serialize(request: AssetActionRequest) -> dict:
     }
 
 
-async def _get_request(case_id: str, request_id: str, db: AsyncSession, user: User) -> AssetActionRequest:
-    case = await _get_authorized_case(case_id, db, user)
+async def _get_request(case_id: str, request_id: str, db: AsyncSession, user: User, *, write: bool = False) -> AssetActionRequest:
+    case = await _get_authorized_case(case_id, db, user, permission="case.write" if write else "case.read")
     try:
         request_uuid = uuid.UUID(request_id)
     except ValueError:
@@ -191,7 +196,7 @@ async def list_action_requests(
         .where(AssetActionRequest.case_id == case.id)
         .order_by(AssetActionRequest.created_at.desc())
     )).all()
-    return [_serialize(item) for item in items]
+    return [await _serialize(item, db) for item in items]
 
 
 @router.post("/{case_id}/action-requests", response_model=AssetActionRequestResponse)
@@ -202,7 +207,7 @@ async def create_action_request(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_get_user),
 ):
-    case = await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user, permission="case.write")
     target = await db.scalar(select(Wallet).where(Wallet.case_id == case.id, Wallet.address == request.target_wallet.strip()))
     if not target or not target.is_destination:
         raise HTTPException(status_code=422, detail="Target wallet must be an identified destination in this case")
@@ -226,7 +231,7 @@ async def create_action_request(
     fingerprint = hashlib.sha256(json.dumps(fingerprint_data, sort_keys=True).encode()).hexdigest()
     existing = await db.scalar(select(AssetActionRequest).where(AssetActionRequest.request_fingerprint == fingerprint))
     if existing:
-        return _serialize(existing)
+        return await _serialize(existing, db)
 
     item = AssetActionRequest(
         case_id=case.id,
@@ -251,7 +256,7 @@ async def create_action_request(
     db.add(item)
     await db.flush()
     record_audit_event(db, user=current_user, action="request_created", resource_type="asset_action_request", resource_id=str(item.id), details={"case_id": str(case.id), "action_type": request.action_type.value}, request=request_context)
-    return _serialize(item)
+    return await _serialize(item, db)
 
 
 @router.get("/{case_id}/action-requests/{request_id}", response_model=AssetActionRequestResponse)
@@ -261,7 +266,7 @@ async def get_action_request(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_get_user),
 ):
-    return _serialize(await _get_request(case_id, request_id, db, current_user))
+    return await _serialize(await _get_request(case_id, request_id, db, current_user), db)
 
 
 @router.post("/{case_id}/action-requests/{request_id}/prepare", response_model=AssetActionRequestResponse)
@@ -272,15 +277,15 @@ async def prepare_action_request(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_get_user),
 ):
-    item = await _get_request(case_id, request_id, db, current_user)
+    item = await _get_request(case_id, request_id, db, current_user, write=True)
     if item.status == AssetActionStatus.PREPARED:
-        return _serialize(item)
+        return await _serialize(item, db)
     if item.status != AssetActionStatus.DRAFT:
         raise HTTPException(status_code=409, detail="Only draft requests can be prepared")
     item.status = AssetActionStatus.PREPARED
     item.updated_at = _now()
     record_audit_event(db, user=current_user, action="request_prepared", resource_type="asset_action_request", resource_id=str(item.id), details={"case_id": str(item.case_id)}, request=request_context)
-    return _serialize(item)
+    return await _serialize(item, db)
 
 
 @router.patch("/{case_id}/action-requests/{request_id}/status", response_model=AssetActionRequestResponse)
@@ -292,13 +297,13 @@ async def update_action_request_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(_get_user),
 ):
-    item = await _get_request(case_id, request_id, db, current_user)
+    item = await _get_request(case_id, request_id, db, current_user, write=True)
     next_status = AssetActionStatus(request.status.value)
     if next_status == item.status:
-        return _serialize(item)
+        return await _serialize(item, db)
     if next_status not in _TRANSITIONS[item.status]:
         raise HTTPException(status_code=409, detail=f"Invalid request transition from {item.status.value} to {next_status.value}")
     item.status = next_status
     item.updated_at = _now()
     record_audit_event(db, user=current_user, action=f"request_{next_status.value}", resource_type="asset_action_request", resource_id=str(item.id), details={"case_id": str(item.case_id)}, request=request_context)
-    return _serialize(item)
+    return await _serialize(item, db)

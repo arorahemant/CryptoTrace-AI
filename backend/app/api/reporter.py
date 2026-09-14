@@ -11,7 +11,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, account_allowed
+from app.core.permissions import require_permission
+from app.core.capabilities import capability_for, capability_payload
 from app.core.audit import record_audit_event
 from app.core.database import get_db
 from app.core.security import decode_access_token
@@ -52,7 +54,7 @@ async def _get_reporter(
         reporter = None
     if not reporter:
         raise HTTPException(status_code=401, detail="Reporter account not found")
-    if not reporter.is_active:
+    if not reporter.is_active or not account_allowed(reporter):
         raise HTTPException(status_code=403, detail="Account is disabled")
     return reporter
 
@@ -85,12 +87,17 @@ def _reporter_status(case: Optional[Case]) -> tuple[str, str, str]:
             "Report received",
             "Your report is queued for investigator review. Keep the reference ID for future access.",
         )
-    if case.status == CaseStatus.COMPLETED:
+    if case.closed_at is not None:
         return (
-            "investigation_completed",
-            "Investigation completed",
-            "The assigned case is marked complete. Retain your reference ID for future updates.",
+            "case_closed",
+            "Case closed by investigator",
+            "The investigator closed this case. This does not verify recovery or an external action.",
         )
+    capability = capability_for(case)
+    if capability.provider_state.value == "not_connected":
+        return ("accepted", "Accepted - provider not connected", "Report accepted. No blockchain observations are available.")
+    if capability.processing_state.value == "completed":
+        return ("analysis_completed", "Analysis processed - case remains open", "The analysis run ended. Findings remain subject to investigator review.")
     if case.status == CaseStatus.REVIEW:
         return (
             "further_review_required",
@@ -128,6 +135,7 @@ async def _serialize_submission(
         "reported_wallet": submission.reported_wallet,
         "blockchain": submission.blockchain,
         "asset": submission.asset or normalize_asset(blockchain, None),
+        "capability": capability_for(case, blockchain=blockchain).model_dump(mode="json"),
         "analysis_status": analysis_status,
         "analysis_message": analysis_message,
         "status": status_code,
@@ -202,8 +210,7 @@ async def list_submissions_for_review(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in (UserRole.INVESTIGATOR, UserRole.SUPERVISOR, UserRole.ADMIN):
-        raise HTTPException(status_code=403, detail="Investigator access required")
+    require_permission(current_user, "submission.review")
     result = await db.execute(
         select(ReporterSubmission)
         .where(ReporterSubmission.case_id.is_(None))
@@ -218,6 +225,7 @@ async def list_submissions_for_review(
                 "reported_wallet": item.reported_wallet,
                 "blockchain": item.blockchain,
                 "asset": item.asset or normalize_asset(Blockchain(item.blockchain), None),
+                "capability": capability_for(blockchain=item.blockchain).model_dump(mode="json"),
                 "analysis_status": analysis_capability(Blockchain(item.blockchain))[0],
                 "analysis_message": analysis_capability(Blockchain(item.blockchain))[1],
                 "description": item.description,
@@ -236,8 +244,7 @@ async def _get_reviewable_submission(
     *,
     record_review: bool = False,
 ) -> ReporterSubmission:
-    if current_user.role not in (UserRole.INVESTIGATOR, UserRole.SUPERVISOR, UserRole.ADMIN):
-        raise HTTPException(status_code=403, detail="Investigator access required")
+    require_permission(current_user, "submission.review")
     try:
         submission_uuid = uuid.UUID(submission_id)
     except (ValueError, TypeError, AttributeError):
@@ -250,6 +257,10 @@ async def _get_reviewable_submission(
     submission = result.scalars().first()
     if not submission:
         raise HTTPException(status_code=404, detail="Report not found")
+    if submission.case_id:
+        case = await db.get(Case, submission.case_id)
+        if not case or (current_user.role not in (UserRole.SUPERVISOR, UserRole.ADMIN) and case.investigator_id != current_user.id):
+            raise HTTPException(status_code=404, detail="Report not found")
     if record_review:
         record_audit_event(
             db,
@@ -273,6 +284,7 @@ def _review_response(submission: ReporterSubmission, case: Optional[Case] = None
         "blockchain": submission.blockchain,
         "asset": submission.asset or normalize_asset(blockchain, None),
         "description": submission.description,
+        "capability": capability_for(case, blockchain=blockchain).model_dump(mode="json"),
         "analysis_status": analysis_status,
         "analysis_message": analysis_message,
         "status": "accepted" if case else "new",
@@ -304,6 +316,7 @@ async def _accept_submission(
     db: AsyncSession,
     current_user: User,
 ):
+    require_permission(current_user, "submission.accept")
     submission = await _get_reviewable_submission(submission_id, db, current_user)
     if submission.case_id:
         raise HTTPException(status_code=409, detail="Report is already assigned")
@@ -361,6 +374,7 @@ async def _accept_submission(
         "reference_number": submission.reference_number,
         "status": "accepted",
         "case_status": case.status.value,
+        "capability": capability_payload(case),
         "analysis_status": analysis_capability(blockchain)[0],
     }
 

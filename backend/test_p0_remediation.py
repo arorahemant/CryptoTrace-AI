@@ -40,7 +40,14 @@ from app.services.investigation_service import InvestigationService
 )
 def test_production_rejects_missing_or_unsafe_secret(unsafe_secret):
     with pytest.raises(ValidationError):
-        Settings(DEMO_MODE=False, SECRET_KEY=unsafe_secret, _env_file=None)
+        Settings(DEMO_MODE=False, SEED_DEMO_ACCOUNTS=False, SECRET_KEY=unsafe_secret, _env_file=None)
+
+
+def test_demo_account_seeding_is_local_demo_only():
+    assert Settings(DEMO_MODE=True, APP_ENV="local", SEED_DEMO_ACCOUNTS=True, _env_file=None).demo_accounts_allowed
+    with pytest.raises(ValidationError, match="Demo account seeding"):
+        Settings(DEMO_MODE=True, APP_ENV="staging", SEED_DEMO_ACCOUNTS=True,
+                 SECRET_KEY="hosted-key-" + ("a9" * 24), _env_file=None)
 
 
 def test_demo_secret_is_ephemeral_and_jwt_round_trip_works():
@@ -59,6 +66,7 @@ def test_valid_production_secret_is_accepted_without_embedding_a_secret():
     configured = "prod-key-" + ("a9" * 24)
     settings = Settings(
         DEMO_MODE=False,
+        SEED_DEMO_ACCOUNTS=False,
         DEBUG=False,
         SECRET_KEY=configured,
         DATABASE_URL="postgresql+asyncpg://user:password@db.internal:5432/cryptotrace",
@@ -79,6 +87,7 @@ def test_production_requires_database_and_cors_configuration():
     with pytest.raises(ValidationError, match="DATABASE_URL"):
         Settings(
             DEMO_MODE=False,
+            SEED_DEMO_ACCOUNTS=False,
             DEBUG=False,
             SECRET_KEY=configured,
             CORS_ORIGINS="https://frontend.example",
@@ -88,6 +97,7 @@ def test_production_requires_database_and_cors_configuration():
     with pytest.raises(ValidationError, match="CORS_ORIGINS"):
         Settings(
             DEMO_MODE=False,
+            SEED_DEMO_ACCOUNTS=False,
             DEBUG=False,
             SECRET_KEY=configured,
             DATABASE_URL="postgresql+asyncpg://user:password@db.internal:5432/cryptotrace",
@@ -100,6 +110,7 @@ def test_production_rejects_local_database_and_debug_mode():
     configured = "prod-key-" + ("a9" * 24)
     common = {
         "DEMO_MODE": False,
+        "SEED_DEMO_ACCOUNTS": False,
         "SECRET_KEY": configured,
         "CORS_ORIGINS": "https://frontend.example",
         "_env_file": None,
@@ -298,9 +309,9 @@ async def test_repeated_investigation_reuses_one_persisted_snapshot(
         await db.commit()
         third_counts = await _counts(db, case_id)
 
-    assert first["status"] == "completed"
-    assert second["status"] == "completed"
-    assert third["status"] == "completed"
+    assert first["status"] == "review"
+    assert second["status"] == "review"
+    assert third["status"] == "review"
     assert first_counts == second_counts == third_counts
     assert first_counts[0] == 9
     assert first_counts[1] == 10
@@ -340,7 +351,7 @@ async def test_concurrent_investigation_requests_do_not_duplicate_rows(
     async with investigation_session_factory() as db:
         counts = await _counts(db, case_id)
 
-    assert all(result["status"] == "completed" for result in results)
+    assert all(result["status"] == "review" for result in results)
     assert counts == (9, 10, 9, 12, 10, 10, 9, 1)
 
 
@@ -370,5 +381,5 @@ async def test_failed_investigation_rolls_back_and_can_be_retried(
         await db.commit()
         retry_counts = await _counts(db, case_id)
 
-    assert result["status"] == "completed"
+    assert result["status"] == "review"
     assert retry_counts == (9, 10, 9, 12, 10, 10, 9, 1)

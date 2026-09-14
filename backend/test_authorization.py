@@ -14,6 +14,17 @@ def login(username: str, password: str) -> str:
     return response.json()["access_token"]
 
 
+def provision_investigator(username: str, password: str) -> None:
+    admin_headers = {"Authorization": f"Bearer {login('admin', 'admin123')}"}
+    response = httpx.post(
+        f"{BASE}/auth/users",
+        headers=admin_headers,
+        json={"email": f"{username}@example.com", "username": username,
+              "password": password, "full_name": "IDOR Tester", "role": "investigator"},
+    )
+    response.raise_for_status()
+
+
 def test_idor_denied_for_investigator_and_allowed_for_supervisor():
     owner_token = login("investigator", "investigate123")
     owner_headers = {"Authorization": f"Bearer {owner_token}"}
@@ -45,9 +56,9 @@ def test_idor_denied_for_investigator_and_allowed_for_supervisor():
         f"{BASE}/auth/register",
         json={"email": f"{username}@example.com", "username": username, "password": "testpass123", "full_name": "IDOR Tester", "role": "admin"},
     )
-    register.raise_for_status()
-    assert register.json()["role"] == "investigator"
-    other_headers = {"Authorization": f"Bearer {login(username, 'testpass123')}"}
+    assert register.status_code == 403
+    provision_investigator(username, "testpass1234")
+    other_headers = {"Authorization": f"Bearer {login(username, 'testpass1234')}"}
 
     sensitive = [
         ("GET", f"/cases/{case_id}"), ("POST", f"/cases/{case_id}/investigate"),
@@ -76,6 +87,9 @@ def test_idor_denied_for_investigator_and_allowed_for_supervisor():
     supervisor_headers = {"Authorization": f"Bearer {login('supervisor', 'supervisor123')}"}
     assert httpx.get(f"{BASE}/cases/{case_id}", headers=supervisor_headers).status_code == 200
     assert any(item["id"] == case_id for item in httpx.get(f"{BASE}/cases", headers=supervisor_headers).json()["cases"])
+    assert httpx.post(f"{BASE}/cases/{case_id}/investigate", headers=supervisor_headers, json={}).status_code == 403
+    assert httpx.post(f"{BASE}/cases/{case_id}/report", headers=supervisor_headers).status_code == 403
+    assert httpx.post(f"{BASE}/cases/{case_id}/close", headers=supervisor_headers).status_code == 403
     admin_headers = {"Authorization": f"Bearer {login('admin', 'admin123')}"}
     assert httpx.get(f"{BASE}/cases/{case_id}", headers=admin_headers).status_code == 200
     assert any(item["id"] == case_id for item in httpx.get(f"{BASE}/cases", headers=admin_headers).json()["cases"])

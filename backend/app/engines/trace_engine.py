@@ -190,7 +190,8 @@ class TraceEngine:
         # Update wallet stats for starting address
         self._finalize_wallet_metadata(discovered_wallets, all_transactions)
 
-        trace_is_partial = provider_errors > 0 or malformed_transactions > 0
+        trace_is_partial = provider_errors > 0 or malformed_transactions > 0 or (total_tx_count >= max_transactions)
+        # A bounded result is not an exhaustive blockchain history.
 
         return {
             "transactions": all_transactions,
@@ -209,7 +210,7 @@ class TraceEngine:
                 "malformed_transactions": malformed_transactions,
                 "trace_status": "partial" if trace_is_partial else "complete",
                 "trace_warning": (
-                    "Trace incomplete: one or more provider responses were unavailable "
+                    "Trace incomplete: a transaction limit was reached or provider responses were unavailable "
                     "or malformed; results may be incomplete."
                     if trace_is_partial
                     else None

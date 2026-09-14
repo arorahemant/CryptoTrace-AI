@@ -133,7 +133,10 @@ def test_investigator_sees_network_asset_and_unsupported_case_cannot_run_demo_an
         json={},
     )
     assert investigation.status_code == 409
-    assert "not connected" in investigation.json()["detail"].lower()
+    detail = investigation.json()["detail"]
+    assert detail["code"] == "provider_not_connected"
+    assert detail["capability"]["provider_state"] == "not_connected"
+    assert detail["capability"]["data_origin"] == "none"
 
     assert httpx.get(
         f"{BASE}/reporter/submissions/review",

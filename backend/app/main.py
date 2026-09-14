@@ -51,12 +51,13 @@ async def lifespan(app: FastAPI):
     async with async_session_factory() as session:
         from sqlalchemy import select
         result = await session.execute(select(User).limit(1))
-        if settings.DEMO_MODE and not result.scalars().first():
+        if settings.demo_accounts_allowed and not result.scalars().first():
             demo_user = User(
                 email="investigator@cryptotrace.ai",
                 username="investigator",
                 hashed_password=get_password_hash("investigate123"),
                 full_name="Lead Investigator",
+                is_demo_account=True,
                 role=UserRole.INVESTIGATOR,
             )
             session.add(demo_user)
@@ -67,6 +68,7 @@ async def lifespan(app: FastAPI):
                 username="supervisor",
                 hashed_password=get_password_hash("supervisor123"),
                 full_name="Senior Supervisor",
+                is_demo_account=True,
                 role=UserRole.SUPERVISOR,
             )
             session.add(supervisor)
@@ -77,12 +79,13 @@ async def lifespan(app: FastAPI):
         # Ensure the RBAC foundation is complete even when an older demo DB
         # already contains the investigator/supervisor seed users.
         admin_result = await session.execute(select(User).where(User.username == "admin"))
-        if settings.DEMO_MODE and not admin_result.scalars().first():
+        if settings.demo_accounts_allowed and not admin_result.scalars().first():
             session.add(User(
                 email="admin@cryptotrace.ai",
                 username="admin",
                 hashed_password=get_password_hash("admin123"),
                 full_name="Platform Administrator",
+                is_demo_account=True,
                 role=UserRole.ADMIN,
             ))
             await session.commit()
@@ -91,12 +94,13 @@ async def lifespan(app: FastAPI):
         reporter_result = await session.execute(
             select(ReporterAccount).where(ReporterAccount.username == "reporter")
         )
-        if settings.DEMO_MODE and not reporter_result.scalars().first():
+        if settings.demo_accounts_allowed and not reporter_result.scalars().first():
             session.add(ReporterAccount(
                 email="reporter@cryptotrace.ai",
                 username="reporter",
                 hashed_password=get_password_hash("report123"),
                 full_name="Demo Reporter",
+                is_demo_account=True,
             ))
             await session.commit()
             logger.info("✅ Demo reporter created")
@@ -154,6 +158,8 @@ async def health_check():
         "version": settings.APP_VERSION,
         "app": settings.APP_NAME,
         "demo_mode": settings.DEMO_MODE,
+        "demo_login_available": settings.demo_accounts_allowed,
+        "live_provider_available": False,
     }
 
 
@@ -173,3 +179,13 @@ async def root():
         "api_docs": "/docs",
         "health": "/health",
     }
+
+
+@app.get(f"{settings.API_PREFIX}/capabilities")
+async def capabilities():
+    from app.core.wallet_validation import ASSETS_BY_BLOCKCHAIN
+    from app.core.capabilities import capability_for
+    return {"networks": [{"blockchain": chain.value, "assets": list(assets),
+                          "capability": capability_for(blockchain=chain).model_dump(mode="json")}
+                         for chain, assets in ASSETS_BY_BLOCKCHAIN.items()],
+            "demo_login_available": settings.demo_accounts_allowed}

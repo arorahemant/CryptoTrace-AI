@@ -11,6 +11,9 @@ from sqlalchemy import select, func, or_
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.permissions import require_permission, permissions_for
+from app.core.capabilities import capability_for, capability_payload, ResultState
+from app.api.auth import account_allowed
 from app.core.audit import record_audit_event
 from app.core.security import decode_access_token
 from app.core.wallet_validation import analysis_capability, normalize_asset, validate_wallet_format
@@ -49,7 +52,7 @@ async def _get_user(
                 user = await db.get(User, uuid.UUID(payload["sub"]))
             except (ValueError, AttributeError, TypeError):
                 user = None
-            if user and user.is_active:
+            if user and user.is_active and account_allowed(user):
                 return user
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -62,12 +65,14 @@ async def _get_authorized_case(
     case_id: str,
     db: AsyncSession,
     user: User,
+    *, permission: str = "case.read",
 ) -> Case:
     """Resolve a case while enforcing owner/supervisor/admin access.
 
     We intentionally return 404 for both unknown and unauthorized case IDs so
     investigators cannot use the API to enumerate other users' cases.
     """
+    require_permission(user, permission)
     try:
         case_uuid = uuid.UUID(case_id)
     except (ValueError, AttributeError):
@@ -77,7 +82,15 @@ async def _get_authorized_case(
         raise HTTPException(status_code=404, detail="Case not found")
     if user.role not in (UserRole.SUPERVISOR, UserRole.ADMIN) and case.investigator_id != user.id:
         raise HTTPException(status_code=404, detail="Case not found")
+    if permission == "case.write" and case.closed_at is not None:
+        raise HTTPException(status_code=409, detail="Case is closed")
     return case
+
+
+def _require_analysis(case):
+    capability = capability_for(case)
+    if capability.result_state not in {ResultState.AVAILABLE, ResultState.PARTIAL, ResultState.STALE}:
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "message": "Analysis results are not available for this action.", "capability": capability.model_dump(mode="json")})
 
 
 def _generate_case_number() -> str:
@@ -125,6 +138,7 @@ async def create_case(
 ):
     """Create a new investigation case."""
     user = current_user
+    require_permission(user, "case.write")
 
     blockchain = Blockchain(request.blockchain.value)
     asset = normalize_asset(blockchain, request.asset)
@@ -237,14 +251,15 @@ async def get_case(
     case_data = _case_to_response(case)
     return {
         **case_data.model_dump(),
+        "permissions": [p for p in permissions_for(current_user) if not (case.closed_at and p == "case.write")],
         "assignment": await _get_case_assignment(db, case),
         "summary": {
             "total_wallets": wallet_count or 0,
             "total_transactions": tx_count or 0,
             "total_findings": finding_count or 0,
             "total_evidence": evidence_count or 0,
-            "risk_level": top_risk.risk_category.value if top_risk else "low",
-            "risk_score": top_risk.risk_score if top_risk else 0,
+            "risk_level": top_risk.risk_category.value if top_risk else None,
+            "risk_score": top_risk.risk_score if top_risk else None,
         },
     }
 
@@ -293,6 +308,7 @@ async def get_audit_log(
         })
 
     return {
+        "capability": capability_payload(case),
         "case_id": case_reference,
         "events": events,
         "total": total or 0,
@@ -313,14 +329,11 @@ async def investigate(
     Run the complete investigation pipeline for a case.
     This is the PRIMARY action — trace, analyze, detect, assess.
     """
-    case = await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user, permission="case.write")
     if case.blockchain != Blockchain.DEMO:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"Report accepted, but analysis provider is not connected for "
-                f"{case.blockchain.value.title()}."
-            ),
+            detail={"code": "provider_not_connected", "message": "Report accepted. Analysis provider is not connected.", "capability": capability_payload(case)},
         )
     already_started = case.status in (
         CaseStatus.INVESTIGATING,
@@ -358,12 +371,17 @@ async def investigate(
             details={"max_hops": request.max_hops, "direction": request.direction},
             request=request_context,
         )
-        return result
+        return {**result, "capability": capability_payload(case)}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception:
         logger.exception("Investigation failed for case %s", case_id)
-        raise HTTPException(status_code=500, detail="Investigation failed")
+        await db.rollback()
+        failed_case = await db.get(Case, uuid.UUID(case_id))
+        failed_case.analysis_summary = {"processing_state": "failed", "result_state": "not_available", "limitations": ["analysis_failed"]}
+        failed_case.status = CaseStatus.REVIEW
+        await db.commit()
+        raise HTTPException(status_code=500, detail={"code": "analysis_failed", "message": "Analysis failed. Retry is available.", "capability": capability_payload(failed_case)})
 
 
 @router.get("/{case_id}/graph")
@@ -373,10 +391,10 @@ async def get_graph(
     current_user: User = Depends(_get_user),
 ):
     """Get the investigation graph for visualization."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
     service = InvestigationService(db)
     try:
-        return await service.get_graph_data(case_id)
+        return {**await service.get_graph_data(case_id), "capability": capability_payload(case)}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -388,12 +406,13 @@ async def get_wallets(
     current_user: User = Depends(_get_user),
 ):
     """Get all discovered wallets for a case."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(Wallet).where(Wallet.case_id == uuid.UUID(case_id))
     )
     wallets = result.scalars().all()
     return {
+        "capability": capability_payload(case),
         "wallets": [
             {
                 "id": str(w.id),
@@ -422,7 +441,7 @@ async def get_transactions(
     current_user: User = Depends(_get_user),
 ):
     """Get all traced transactions for a case."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(Transaction)
         .where(Transaction.case_id == uuid.UUID(case_id))
@@ -430,6 +449,7 @@ async def get_transactions(
     )
     txs = result.scalars().all()
     return {
+        "capability": capability_payload(case),
         "transactions": [
             {
                 "id": str(t.id),
@@ -460,12 +480,13 @@ async def get_findings(
     current_user: User = Depends(_get_user),
 ):
     """Get suspicious pattern findings for a case."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(PatternFinding).where(PatternFinding.case_id == uuid.UUID(case_id))
     )
     findings = result.scalars().all()
     return {
+        "capability": capability_payload(case),
         "findings": [
             {
                 "id": str(f.id),
@@ -494,7 +515,7 @@ async def save_evidence(
     current_user: User = Depends(_get_user),
 ):
     """Persist an investigator-selected evidence item for this case."""
-    case = await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user, permission="case.write")
 
     if request.finding_id:
         finding = await db.get(PatternFinding, request.finding_id)
@@ -547,6 +568,7 @@ async def save_evidence(
         request=request_context,
     )
     return {
+        "capability": capability_payload(case),
         "id": str(evidence.id),
         "case_id": str(evidence.case_id),
         "finding_id": str(evidence.finding_id) if evidence.finding_id else None,
@@ -569,12 +591,13 @@ async def get_evidence(
     current_user: User = Depends(_get_user),
 ):
     """Get all evidence items for a case."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(Evidence).where(Evidence.case_id == uuid.UUID(case_id))
     )
     evidence = result.scalars().all()
     return {
+        "capability": capability_payload(case),
         "evidence": [
             {
                 "id": str(e.id),
@@ -603,7 +626,7 @@ async def get_timeline(
     current_user: User = Depends(_get_user),
 ):
     """Get chronological investigation timeline."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(InvestigationEvent)
         .where(InvestigationEvent.case_id == uuid.UUID(case_id))
@@ -611,6 +634,7 @@ async def get_timeline(
     )
     events = result.scalars().all()
     return {
+        "capability": capability_payload(case),
         "events": [
             {
                 "id": str(e.id),
@@ -638,7 +662,7 @@ async def get_fund_flow(
     current_user: User = Depends(_get_user),
 ):
     """Get fund flow paths."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(FundFlow)
         .where(FundFlow.case_id == uuid.UUID(case_id))
@@ -646,6 +670,7 @@ async def get_fund_flow(
     )
     flows = result.scalars().all()
     return {
+        "capability": capability_payload(case),
         "fund_flows": [
             {
                 "from_address": f.from_address,
@@ -671,10 +696,10 @@ async def why_flagged(
     current_user: User = Depends(_get_user),
 ):
     """WHY WAS THIS FLAGGED? — Signature feature."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
     service = InvestigationService(db)
     try:
-        return await service.get_why_explanation(case_id, wallet_address)
+        return {**await service.get_why_explanation(case_id, wallet_address), "capability": capability_payload(case)}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -686,10 +711,11 @@ async def get_replay(
     current_user: User = Depends(_get_user),
 ):
     """Get replay events for chronological animation."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
     service = InvestigationService(db)
     events = await service.get_replay_events(case_id)
     return {
+        "capability": capability_payload(case),
         "case_id": case_id,
         "total_steps": len(events),
         "events": events,
@@ -704,13 +730,14 @@ async def ai_query(
     current_user: User = Depends(_get_user),
 ):
     """AI Investigation Copilot — grounded answers from case data."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user, permission="case.write")
+    _require_analysis(case)
     question = request.question
     if len(question) < 3:
         raise HTTPException(status_code=400, detail="Question is too short")
 
     ai_service = AIService(db)
-    return await ai_service.query(case_id, question)
+    return {**await ai_service.query(case_id, question), "capability": capability_payload(case)}
 
 
 @router.post("/{case_id}/report")
@@ -721,13 +748,14 @@ async def generate_report(
     current_user: User = Depends(_get_user),
 ):
     """Generate investigation report."""
-    case = await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user, permission="case.write")
+    _require_analysis(case)
 
     # Build report from all case data
     ai_service = AIService(db)
     context = await ai_service._build_context(case.id)
 
-    sections = []
+    sections = [{"title": "Data and capability", "section_type": "analysis", "content": "DEMO DATA - synthetic investigation. Not a live blockchain observation. Processing completion does not close the case. No external freeze or government action is verified."}]
 
     # Case Information (FACT)
     sections.append({
@@ -830,7 +858,7 @@ async def generate_report(
 
         sections.append({
             "title": "Investigation Summary",
-            "section_type": "ai_summary",
+            "section_type": "analysis",
             "content": summary_text,
         })
 
@@ -858,6 +886,7 @@ async def generate_report(
     )
 
     return {
+        "capability": capability_payload(case),
         "id": str(report.id),
         "case_id": str(case.id),
         "title": report.title,
@@ -876,7 +905,7 @@ async def get_report(
     current_user: User = Depends(_get_user),
 ):
     """Get the latest report for a case."""
-    await _get_authorized_case(case_id, db, current_user)
+    case = await _get_authorized_case(case_id, db, current_user)
     result = await db.execute(
         select(Report)
         .where(Report.case_id == uuid.UUID(case_id))
@@ -888,6 +917,7 @@ async def get_report(
         raise HTTPException(status_code=404, detail="No report generated yet")
 
     return {
+        "capability": capability_payload(case),
         "id": str(report.id),
         "case_id": str(report.case_id),
         "title": report.title,
@@ -918,7 +948,20 @@ def _case_to_response(case: Case) -> CaseResponse:
         reported_amount=case.reported_amount,
         notes=case.notes,
         investigator_id=case.investigator_id,
-        is_demo=case.is_demo,
+        is_demo=(case.blockchain == Blockchain.DEMO),
+        capability=capability_for(case),
+        lifecycle="closed" if case.closed_at else "open",
+        closed_at=case.closed_at,
         created_at=case.created_at,
         updated_at=case.updated_at,
     )
+
+
+@router.post("/{case_id}/close", response_model=CaseResponse)
+async def close_case(case_id: str, request_context: Request, db: AsyncSession = Depends(get_db),
+                     current_user: User = Depends(_get_user)):
+    case = await _get_authorized_case(case_id, db, current_user, permission="case.write")
+    case.closed_at = datetime.now(timezone.utc)
+    case.status = CaseStatus.COMPLETED
+    record_audit_event(db, user=current_user, action="case_closed", resource_type="case", resource_id=str(case.id), request=request_context)
+    return _case_to_response(case)

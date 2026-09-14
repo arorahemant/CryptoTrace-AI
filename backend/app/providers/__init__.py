@@ -8,7 +8,9 @@ def get_provider(provider_name: str = "demo") -> BlockchainProvider:
     providers = {
         "demo": DemoProvider,
     }
-    provider_class = providers.get(provider_name, DemoProvider)
+    if provider_name not in providers:
+        raise ValueError("Blockchain provider is not connected")
+    provider_class = providers[provider_name]
     return provider_class()
 
 

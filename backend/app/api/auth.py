@@ -11,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.core.config import settings
+from app.core.permissions import require_permission, permissions_for
+from app.core.audit import record_audit_event
 from app.core.security import verify_password, get_password_hash, create_access_token, decode_access_token
 from app.models.models import (
     InvestigatorPublicProfile,
@@ -22,6 +25,8 @@ from app.schemas.schemas import (
     InvestigatorPublicProfileResponse,
     InvestigatorPublicProfileUpdate,
     LoginRequest,
+    StaffProvisionRequest,
+    StaffAccessUpdate,
     LoginResponse,
     RegisterRequest,
     ReporterRegisterRequest,
@@ -86,7 +91,7 @@ async def login(
             detail="Invalid credentials",
         )
 
-    if not user.is_active:
+    if not user.is_active or not account_allowed(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled",
@@ -107,53 +112,21 @@ async def login(
             role=role,
             is_active=user.is_active,
             created_at=user.created_at,
+            permissions=permissions_for(user) if role != "reporter" else ["submission.create", "submission.read_own"],
         ),
     )
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    """Register a new user."""
-    # Check existing
-    existing = await db.execute(
-        select(User).where(
-            (User.email == request.email) | (User.username == request.username)
-        )
-    )
-    reporter_existing = await db.execute(
-        select(ReporterAccount).where(
-            (ReporterAccount.email == request.email) |
-            (ReporterAccount.username == request.username)
-        )
-    )
-    if existing.scalars().first() or reporter_existing.scalars().first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User with this email or username already exists",
-        )
+async def register(request: RegisterRequest):
+    """Staff accounts require an authenticated administrator's approval."""
+    raise HTTPException(status_code=403, detail="Public staff registration is disabled. Contact an administrator.")
 
-    user = User(
-        email=request.email,
-        username=request.username,
-        hashed_password=get_password_hash(request.password),
-        full_name=request.full_name,
-        # Public registration cannot self-assign privileged roles. Supervisors
-        # and admins must be provisioned by an administrator.
-        role=UserRole.INVESTIGATOR,
-    )
-    db.add(user)
-    await db.flush()
-    await db.refresh(user)
 
-    return UserResponse(
-        id=user.id,
-        email=user.email,
-        username=user.username,
-        full_name=user.full_name,
-        role=user.role.value,
-        is_active=user.is_active,
-        created_at=user.created_at,
-    )
+def account_allowed(user) -> bool:
+    # Also cover legacy seeded accounts before/without their marker migration.
+    reserved = user.username in {"investigator", "supervisor", "admin", "reporter"} and user.email == f"{user.username}@cryptotrace.ai"
+    return settings.demo_accounts_allowed or not (getattr(user, "is_demo_account", False) or reserved)
 
 
 @router.post("/reporter/register", response_model=UserResponse)
@@ -225,7 +198,7 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    if not user.is_active:
+    if not user.is_active or not account_allowed(user):
         raise HTTPException(status_code=403, detail="Account is disabled")
 
     return user
@@ -266,3 +239,48 @@ async def update_public_profile(
     await db.flush()
     await db.refresh(profile)
     return profile
+
+
+@router.get("/me", response_model=UserResponse)
+async def current_identity(user: User = Depends(get_current_user)):
+    return {"id": user.id, "email": user.email, "username": user.username,
+            "full_name": user.full_name, "role": user.role, "is_active": user.is_active,
+            "created_at": user.created_at, "permissions": permissions_for(user)}
+
+
+@router.post("/users", response_model=UserResponse, status_code=201)
+async def provision_user(request: StaffProvisionRequest, request_context: Request,
+                         db: AsyncSession = Depends(get_db),
+                         administrator: User = Depends(get_current_user)):
+    require_permission(administrator, "users.manage")
+    for model in (User, ReporterAccount):
+        if await db.scalar(select(model.id).where((model.username == request.username) | (model.email == request.email))):
+            raise HTTPException(status_code=409, detail="Account already exists")
+    user = User(email=request.email, username=request.username, full_name=request.full_name,
+                hashed_password=get_password_hash(request.password), role=UserRole(request.role),
+                is_active=True, is_demo_account=False)
+    db.add(user)
+    await db.flush()
+    record_audit_event(db, user=administrator, action="staff_provisioned", resource_type="user",
+                       resource_id=str(user.id), details={"role": user.role.value}, request=request_context)
+    return {"id": user.id, "email": user.email, "username": user.username,
+            "full_name": user.full_name, "role": user.role, "is_active": user.is_active,
+            "created_at": user.created_at, "permissions": permissions_for(user)}
+
+
+@router.patch("/users/{user_id}", response_model=UserResponse)
+async def set_staff_access(user_id: uuid.UUID, request: StaffAccessUpdate,
+                          request_context: Request, db: AsyncSession = Depends(get_db),
+                          administrator: User = Depends(get_current_user)):
+    require_permission(administrator, "users.manage")
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role == UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Administrator access requires operator management")
+    user.is_active = request.is_active
+    record_audit_event(db, user=administrator, action="staff_access_changed", resource_type="user",
+                       resource_id=str(user.id), details={"is_active": user.is_active}, request=request_context)
+    return {"id": user.id, "email": user.email, "username": user.username,
+            "full_name": user.full_name, "role": user.role, "is_active": user.is_active,
+            "created_at": user.created_at, "permissions": permissions_for(user)}

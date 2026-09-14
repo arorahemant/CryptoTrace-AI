@@ -120,7 +120,15 @@ def test_incoming_queue_and_case_acceptance_remain_investigator_only():
             "full_name": "Queue Access Tester",
         },
     )
-    registration.raise_for_status()
+    assert registration.status_code == 403
+    admin = _login("admin", "admin123")
+    httpx.post(
+        f"{BASE}/auth/users",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={"email": f"queue_{suffix}@example.com", "username": f"queue_{suffix}",
+              "password": "investigator-test-123", "full_name": "Queue Access Tester",
+              "role": "investigator"},
+    ).raise_for_status()
     other = _login(f"queue_{suffix}", "investigator-test-123")
     other_headers = {"Authorization": f"Bearer {other['access_token']}"}
 

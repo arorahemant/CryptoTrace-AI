@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, FileSearch, Loader2, LogOut, Send, ShieldCheck } from 'lucide-react';
 import api from '@/lib/api';
+import { CapabilityNotice } from '@/components/CapabilityNotice';
+import { type CapabilityState, type NetworkCapability } from '@/lib/capabilities';
 
 interface ReporterUser {
   full_name: string;
@@ -11,6 +13,7 @@ interface ReporterUser {
 }
 
 interface ReporterSubmission {
+  capability: CapabilityState;
   id: string;
   reference_number: string;
   title: string;
@@ -53,6 +56,8 @@ export default function ReporterPage() {
   });
   const [submissions, setSubmissions] = useState<ReporterSubmission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [capabilities, setCapabilities] = useState<NetworkCapability[]>([]);
+  useEffect(() => { api.capabilities().then(data => setCapabilities(data.networks)).catch(() => setCapabilities([])); }, []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [createdReference, setCreatedReference] = useState('');
@@ -160,7 +165,7 @@ export default function ReporterPage() {
             <label><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Network / chain</span><select className="ct-field px-3 text-sm" value={blockchain} onChange={(event) => { const next = networkOptions.find((option) => option.value === event.target.value) || networkOptions[0]; setBlockchain(next.value); setAsset(next.assets[0].value); setWallet(next.value === 'demo' ? '0xReported001' : ''); }} aria-label="Network or chain">{networkOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
             <label><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Asset / currency</span><select className="ct-field px-3 text-sm" value={asset} onChange={(event) => setAsset(event.target.value)}>{selectedNetwork.assets.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
             <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Wallet address</span><input className="ct-field px-3 font-mono text-sm" value={wallet} onChange={(event) => setWallet(event.target.value)} required minLength={10} placeholder={blockchain === 'demo' ? 'Demo wallet address' : 'Paste the wallet address'} /></label>
-            <div className="sm:col-span-2 rounded-lg border border-[#d9c3af] bg-[var(--ct-warning-surface)] p-3 text-xs leading-5 text-[var(--ct-ink-muted)]"><div className="font-semibold text-[var(--ct-ink)]">{selectedNetwork.capability === 'analysis_available' ? 'Analysis available' : 'Analysis provider not connected'}</div><div className="mt-1">{selectedNetwork.message}</div>{selectedNetwork.capability === 'analysis_available' && <div className="mt-1">This is DEMO DATA for demonstration only.</div>}</div>
+            <div className="sm:col-span-2"><CapabilityNotice capability={capabilities.find(n => n.blockchain === blockchain)?.capability} /></div>
             <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">What happened? <span className="font-normal text-[var(--ct-ink-muted)]">(optional)</span></span><textarea className="ct-field min-h-24 resize-y px-3 py-2.5 text-sm" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} placeholder="Add context that may help an investigator review the report." aria-describedby="description-counter" /><div id="description-counter" className="mt-1.5 text-right text-xs text-[var(--ct-ink-muted)]" aria-live="polite">{description.length} / 2,000 characters</div></label>
             <div className="sm:col-span-2"><button type="submit" disabled={submitting} className="ct-button-primary flex w-full items-center justify-center gap-2 px-4 py-2.5 text-sm disabled:opacity-50 sm:w-auto">{submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</> : 'Submit report'}</button></div>
           </form>
@@ -181,7 +186,7 @@ export default function ReporterPage() {
                     <span className={`ct-status-chip self-start ${statusStyle[submission.status] || statusStyle.report_received}`}>{submission.status_label}</span>
                   </div>
                   <div className="mt-4 grid gap-3 border-t border-[var(--ct-outline-variant)] pt-4 sm:grid-cols-2">
-                     <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">Analysis status</div><p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">{submission.analysis_message}</p></div>
+                     <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">Analysis status</div><CapabilityNotice capability={submission.capability} /></div>
                      <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">What happens next</div><p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">{submission.next_step}</p></div>
                     <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">Accountability</div>{submission.assigned_investigator ? <div className="mt-1"><div className="text-sm font-semibold text-[var(--ct-ink)]">{submission.assigned_investigator.display_name}</div><div className="text-xs text-[var(--ct-ink-muted)]">{submission.assigned_investigator.role_title}</div></div> : <p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">Approved investigator details are not available for display.</p>}</div>
                   </div>

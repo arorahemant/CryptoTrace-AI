@@ -7,6 +7,8 @@ from typing import Optional, List, Any
 from datetime import datetime
 from uuid import UUID
 from enum import Enum
+from typing import Literal
+from app.core.capabilities import CapabilityState
 
 
 # ─── Enums ─────────────────────────────────────────────────────────────────────
@@ -66,6 +68,20 @@ class AssetActionStatusSchema(str, Enum):
 
 # ─── Auth ──────────────────────────────────────────────────────────────────────
 
+class StaffProvisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+    username: str = Field(..., min_length=3, max_length=100, pattern=r"^[a-zA-Z0-9_.-]+$")
+    password: str = Field(..., min_length=12, max_length=72)
+    full_name: str = Field(..., min_length=2, max_length=255)
+    role: Literal["investigator", "supervisor"] = "investigator"
+
+
+class StaffAccessUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    is_active: bool
+
+
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=100)
     password: str = Field(..., min_length=6)
@@ -86,6 +102,7 @@ class RegisterRequest(BaseModel):
 
 
 class ReporterRegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     email: EmailStr
     username: str = Field(..., min_length=3, max_length=100)
     password: str = Field(..., min_length=8, max_length=128)
@@ -95,6 +112,7 @@ class ReporterRegisterRequest(BaseModel):
 # ─── User ──────────────────────────────────────────────────────────────────────
 
 class UserResponse(BaseModel):
+    permissions: list[str] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -122,6 +140,9 @@ class CaseCreate(BaseModel):
 
 
 class CaseResponse(BaseModel):
+    capability: CapabilityState
+    lifecycle: Literal["open", "closed"] = "open"
+    closed_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -164,6 +185,7 @@ class ReporterVisibleInvestigator(BaseModel):
 
 
 class ReporterSubmissionResponse(BaseModel):
+    capability: CapabilityState
     id: UUID
     reference_number: str
     title: str
@@ -262,6 +284,7 @@ class AssetActionStatusUpdate(BaseModel):
 
 
 class AssetActionReadiness(BaseModel):
+    capability: CapabilityState
     case_id: UUID
     ready: bool
     destination_wallet: Optional[str]
@@ -285,6 +308,8 @@ class AssetActionReadiness(BaseModel):
 
 
 class AssetActionRequestResponse(BaseModel):
+    external_action_verified: bool = False
+    capability: CapabilityState
     id: UUID
     case_id: UUID
     actor_id: UUID
@@ -338,6 +363,7 @@ class InvestigatorRecommendation(BaseModel):
 
 
 class RecommendationsResponse(BaseModel):
+    capability: CapabilityState
     case_id: UUID
     recommendations: List[InvestigatorRecommendation]
 
@@ -640,6 +666,7 @@ class ReplayEvent(BaseModel):
 
 
 class ReplayResponse(BaseModel):
+    capability: CapabilityState
     case_id: UUID
     total_steps: int
     events: List[ReplayEvent]
@@ -652,6 +679,8 @@ class AIQueryRequest(BaseModel):
 
 
 class AIQueryResponse(BaseModel):
+    output_kind: Literal["deterministic_explanation"] = "deterministic_explanation"
+    capability: CapabilityState
     answer: str
     grounded: bool = True
     sources: List[str] = []

@@ -106,6 +106,7 @@ class User(Base):
     full_name = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), nullable=False, default=UserRole.INVESTIGATOR)
     is_active = Column(Boolean, default=True)
+    is_demo_account = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -145,6 +146,7 @@ class ReporterAccount(Base):
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    is_demo_account = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -172,6 +174,8 @@ class Case(Base):
     incident_date = Column(DateTime(timezone=True), nullable=True)
     reported_amount = Column(Float, nullable=True)
     notes = Column(Text, nullable=True)
+    analysis_summary = Column(JSON, nullable=True)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
     investigator_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     is_demo = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=utcnow)

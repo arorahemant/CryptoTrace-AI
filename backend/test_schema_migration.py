@@ -22,7 +22,7 @@ def test_asset_action_schema_is_versioned_and_present():
             return version, tables, columns
 
     version, tables, columns = asyncio.run(read_schema())
-    assert version == "0006_case_accepted_status"
+    assert version == "0007_access_capability"
     assert {
         "investigator_public_profiles",
         "reporter_accounts",
@@ -30,4 +30,4 @@ def test_asset_action_schema_is_versioned_and_present():
         "asset_action_requests",
     } <= tables
     assert {"asset"} <= columns["reporter_submissions"]
-    assert {"asset", "source_submission_reference"} <= columns["cases"]
+    assert {"asset", "source_submission_reference", "analysis_summary", "closed_at"} <= columns["cases"]

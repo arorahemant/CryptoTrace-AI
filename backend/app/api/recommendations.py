@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.cases import _get_authorized_case, _get_user
 from app.core.database import get_db
+from app.core.capabilities import capability_payload
 from app.models.models import User
 from app.schemas.schemas import RecommendationsResponse
 from app.services.recommendation_service import build_recommendations
@@ -18,4 +19,4 @@ async def get_recommendations(
     current_user: User = Depends(_get_user),
 ):
     case = await _get_authorized_case(case_id, db, current_user)
-    return {"case_id": case.id, "recommendations": await build_recommendations(db, case)}
+    return {"capability": capability_payload(case), "case_id": case.id, "recommendations": await build_recommendations(db, case)}

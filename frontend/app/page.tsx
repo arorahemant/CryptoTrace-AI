@@ -1,14 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, CheckCircle2, FileSearch, Route, ShieldCheck } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState('investigator');
-  const [password, setPassword] = useState('investigate123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [demoAvailable, setDemoAvailable] = useState(false);
+  useEffect(() => { api.capabilities().then(data => setDemoAvailable(data.demo_login_available)).catch(() => setDemoAvailable(false)); }, []);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [demoRole, setDemoRole] = useState<'investigator' | 'reporter'>('investigator');
@@ -31,8 +33,8 @@ export default function LoginPage() {
         localStorage.setItem('cryptotrace_user', JSON.stringify(data.user));
       }
       router.push(data.user.role === 'reporter' ? '/reporter' : '/dashboard');
-    } catch {
-      setError('Sign-in unsuccessful. Check your username and password, then try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in unsuccessful. Please retry.");
     } finally {
       setLoading(false);
     }
@@ -83,14 +85,14 @@ export default function LoginPage() {
 
         <section className="ct-login-auth flex items-center p-6 sm:p-10 lg:p-12" aria-labelledby="sign-in-heading">
           <div className="w-full">
-            <div className="ct-mobile-role-entry mb-5 sm:hidden" aria-label="Choose how to enter CryptoTrace">
+            {demoAvailable && <div className="ct-mobile-role-entry mb-5 sm:hidden" aria-label="Choose how to enter CryptoTrace">
               <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--ct-outline)]">Choose your path</p>
               <div className="grid gap-2">
                 <button type="button" onClick={() => selectDemoRole('reporter')} aria-pressed={demoRole === 'reporter'} className={`min-h-12 rounded border px-4 text-left text-xs font-bold uppercase tracking-wide ${demoRole === 'reporter' ? 'border-[var(--ct-primary)] bg-[var(--ct-primary)] text-white' : 'border-[var(--ct-outline-variant)] bg-white text-[var(--ct-primary)]'}`}>Report suspicious wallet</button>
                 <button type="button" onClick={() => selectDemoRole('investigator')} aria-pressed={demoRole === 'investigator'} className={`min-h-12 rounded border px-4 text-left text-xs font-bold uppercase tracking-wide ${demoRole === 'investigator' ? 'border-[var(--ct-primary)] bg-[var(--ct-primary)] text-white' : 'border-[var(--ct-outline-variant)] bg-white text-[var(--ct-primary)]'}`}>Investigator login</button>
               </div>
             </div>
-            <p className="ct-eyebrow mb-2">Secure workspace</p>
+            }<p className="ct-eyebrow mb-2">Secure workspace</p>
             <h2 id="sign-in-heading" className="text-2xl font-bold tracking-tight text-[var(--ct-ink)]">Sign in to continue</h2>
             <p className="mt-2 text-sm leading-6 text-[var(--ct-ink-muted)]">Use your authorized CryptoTrace account to open your case workspace.</p>
 
@@ -117,7 +119,7 @@ export default function LoginPage() {
               </button>
             </form>
 
-            <div className="ct-demo-context mt-7 rounded-lg border border-[#d9c3af] bg-[var(--ct-warning-surface)] p-4">
+            {demoAvailable && <div className="ct-demo-context mt-7 rounded-lg border border-[#d9c3af] bg-[var(--ct-warning-surface)] p-4">
               <div className="flex items-start gap-3">
                 <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--risk-medium)]" aria-hidden="true" />
                 <div>
@@ -141,7 +143,7 @@ export default function LoginPage() {
                   </div>
                 </div>
               </div>
-            </div>
+            </div>}
           </div>
         </section>
       </div>

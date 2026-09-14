@@ -9,6 +9,8 @@ def test_known_verified_requires_authoritative_provenance():
         "attribution_status": "known_verified",
         "provenance": "trusted_external_source",
         "source_reference": "trusted-provider-record-1",
+        "verified_at": "2026-09-14T00:00:00+00:00",
+        "supporting_transaction_hashes": ["0xauthoritative-evidence"],
         "reasoning": "Matched authoritative address intelligence record.",
     })
     assert verified["attribution_status"] == "known_verified"

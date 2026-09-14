@@ -102,7 +102,7 @@ def test_recommendations_enforce_reporter_and_idor_boundaries():
 
     other_case = requests.post(
         f"{BASE}/cases",
-        headers=_headers(_login("supervisor", "supervisor123")),
+        headers=_headers(_login("admin", "admin123")),
         json={"title": "Other recommendation case", "reported_wallet": "0xReported001", "blockchain": "demo"},
         timeout=10,
     )

@@ -40,6 +40,8 @@ def normalize_attribution(record: Any) -> dict[str, Any]:
 
     if status == KNOWN_VERIFIED and provenance not in {TRUSTED_EXTERNAL_SOURCE, INSTITUTIONAL_SOURCE}:
         status = LIKELY_INFERRED
+    if status == KNOWN_VERIFIED and not (get("source_reference") and get("verified_at") and (get("supporting_evidence_ids") or get("supporting_transaction_hashes"))):
+        status = LIKELY_INFERRED
     if status == UNKNOWN:
         entity_name = None
     else:

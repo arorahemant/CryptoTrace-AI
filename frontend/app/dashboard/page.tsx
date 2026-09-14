@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import { CapabilityNotice } from '@/components/CapabilityNotice';
+import { capabilityLabel, type CapabilityState, type NetworkCapability } from '@/lib/capabilities';
 import {
   Search, Plus, Shield, Clock, CheckCircle,
   ChevronRight, Inbox, Loader2, LogOut, Settings as SettingsIcon
@@ -24,6 +26,8 @@ const statIconColors: Record<string, string> = {
 };
 
 interface CaseRecord {
+  capability: CapabilityState;
+  lifecycle: 'open' | 'closed';
   id: string;
   case_number: string;
   title: string;
@@ -34,8 +38,9 @@ interface CaseRecord {
   created_at: string;
 }
 
-interface UserRecord { full_name: string; username: string; role: string; }
+interface UserRecord { permissions?: string[]; full_name: string; username: string; role: string; }
 interface ReporterReviewRecord {
+  capability: CapabilityState;
   id: string;
   reference_number: string;
   title: string;
@@ -62,7 +67,7 @@ export default function DashboardPage() {
   const [assigningSubmission, setAssigningSubmission] = useState('');
   const [reviewedSubmission, setReviewedSubmission] = useState<ReporterReviewDetail | null>(null);
   const [reviewingSubmission, setReviewingSubmission] = useState('');
-  const [user] = useState<UserRecord | null>(() => {
+  const [user, setUser] = useState<UserRecord | null>(() => {
     if (typeof window === 'undefined') return null;
     const stored = localStorage.getItem('cryptotrace_user');
     if (!stored) return null;
@@ -71,6 +76,8 @@ export default function DashboardPage() {
 
   const loadCases = useCallback(async () => {
     try {
+      const identity = await api.currentUser();
+      setUser(identity);
       const data = await api.listCases();
       setCases(data.cases || []);
       setLoadError('');
@@ -182,7 +189,7 @@ export default function DashboardPage() {
               Case validation
             </button>
             <button
-              onClick={() => setShowCreateModal(true)}
+              disabled={!user?.permissions?.includes('case.write')} onClick={() => setShowCreateModal(true)}
               className="ct-button-primary flex items-center gap-2 px-4 py-2.5 text-sm"
             >
               <Plus className="w-4 h-4" />
@@ -197,7 +204,7 @@ export default function DashboardPage() {
             { label: 'Total Cases', value: cases.length, icon: Shield, color: 'blue' },
             { label: 'Investigating', value: cases.filter(c => c.status === 'investigating').length, icon: Search, color: 'amber' },
             { label: 'Review', value: cases.filter(c => c.status === 'review').length, icon: Clock, color: 'purple' },
-            { label: 'Completed', value: cases.filter(c => c.status === 'completed').length, icon: CheckCircle, color: 'green' },
+            { label: 'Closed by investigator', value: cases.filter(c => c.lifecycle === 'closed').length, icon: CheckCircle, color: 'green' },
           ].map((stat) => (
             <div key={stat.label} className="ct-card p-4">
               <div className="flex items-center justify-between mb-2">
@@ -232,10 +239,10 @@ export default function DashboardPage() {
                   <div><div className="ct-label">Network / asset</div><div className="mt-1 font-semibold text-[var(--ct-ink)]">{reviewedSubmission.blockchain} · {reviewedSubmission.asset}</div></div>
                   <div><div className="ct-label">Wallet</div><div className="mt-1 break-all font-mono text-[var(--ct-ink)]">{reviewedSubmission.reported_wallet}</div></div>
                   <div><div className="ct-label">Submitted</div><div className="mt-1 text-[var(--ct-ink)]">{reviewedSubmission.submitted_at ? new Date(reviewedSubmission.submitted_at).toLocaleString() : 'NOT AVAILABLE'}</div></div>
-                  <div><div className="ct-label">Capability</div><div className="mt-1 text-[var(--ct-ink)]">{reviewedSubmission.analysis_message}</div></div>
+                  <div><div className="ct-label">Capability</div><div className="mt-1 text-[var(--ct-ink)]">{capabilityLabel(reviewedSubmission.capability)}</div></div>
                 </div>
                 <div className="mt-3 border-t border-[var(--ct-outline-variant)] pt-3"><div className="ct-label">Reporter summary</div><p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">{reviewedSubmission.description || 'No incident summary provided.'}</p></div>
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><span className="ct-status-chip bg-[var(--ct-surface-high)] text-[var(--ct-primary)]">NEW · UNTRIAGED</span><button type="button" onClick={() => void acceptSubmission(reviewedSubmission.id)} disabled={assigningSubmission === reviewedSubmission.id} className="ct-button-primary px-4 py-2 text-xs disabled:opacity-50">{assigningSubmission === reviewedSubmission.id ? 'Accepting…' : 'Accept case'}</button></div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><span className="ct-status-chip bg-[var(--ct-surface-high)] text-[var(--ct-primary)]">NEW · UNTRIAGED</span><button type="button" onClick={() => void acceptSubmission(reviewedSubmission.id)} disabled={!user?.permissions?.includes('submission.accept') || assigningSubmission === reviewedSubmission.id} className="ct-button-primary px-4 py-2 text-xs disabled:opacity-50">{assigningSubmission === reviewedSubmission.id ? 'Accepting…' : 'Accept case'}</button></div>
               </section>
             )}
             <div className="grid gap-3 lg:grid-cols-2">
@@ -248,7 +255,7 @@ export default function DashboardPage() {
                       <h3 className="mt-1 truncate text-sm font-semibold text-[var(--ct-ink)]">{submission.title}</h3>
                       <p className="mt-1 truncate font-mono text-[10px] text-[var(--ct-ink-muted)]">{submission.reported_wallet}</p>
                       <p className="mt-2 text-xs font-semibold text-[var(--ct-ink)]">{submission.blockchain} · {submission.asset}</p>
-                      <p className="mt-1 text-[10px] leading-4 text-[var(--ct-ink-muted)]">{submission.analysis_message}</p>
+                      <p className="mt-1 text-[10px] leading-4 text-[var(--ct-ink-muted)]">{capabilityLabel(submission.capability)}</p>
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                         <span className="text-[10px] text-[var(--ct-outline)]">Submitted {new Date(submission.submitted_at).toLocaleString()}</span>
                         <button type="button" onClick={() => void reviewSubmission(submission.id)} disabled={reviewingSubmission === submission.id} className="ct-button-primary px-3 py-1.5 text-xs disabled:opacity-50">
@@ -288,7 +295,7 @@ export default function DashboardPage() {
             <h3 className="mb-2 font-semibold text-[var(--ct-ink)]">No cases yet</h3>
             <p className="mb-6 text-sm text-[var(--ct-ink-muted)]">Create a case to begin tracing a reported wallet.</p>
             <button
-              onClick={() => setShowCreateModal(true)}
+              disabled={!user?.permissions?.includes('case.write')} onClick={() => setShowCreateModal(true)}
               className="ct-button-primary px-6 py-2.5 text-sm"
             >
               Create First Case
@@ -337,7 +344,7 @@ export default function DashboardPage() {
                       <div className="text-xs text-slate-500">
                         {new Date(c.created_at).toLocaleDateString()}
                       </div>
-                      <div className="text-xs text-slate-600 mt-0.5">{c.blockchain}</div>
+                      <div className="text-xs text-slate-600 mt-0.5">{c.blockchain}</div><CapabilityNotice capability={c.capability} />
                     </div>
                     <ChevronRight className="h-4 w-4 text-[var(--ct-outline)] group-hover:text-[var(--ct-primary)]" />
                   </div>
@@ -367,6 +374,8 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [title, setTitle] = useState('Suspicious Wallet Investigation');
   const [wallet, setWallet] = useState('0xReported001');
   const [blockchain, setBlockchain] = useState('demo');
+  const [networkCapabilities, setNetworkCapabilities] = useState<NetworkCapability[]>([]);
+  useEffect(() => { api.capabilities().then(data => setNetworkCapabilities(data.networks)).catch(() => setNetworkCapabilities([])); }, []);
   const [amount, setAmount] = useState('12500');
   const [description, setDescription] = useState('Investigation of suspected fraud-linked wallet reported by victim.');
   const [loading, setLoading] = useState(false);
@@ -485,6 +494,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
             />
           </div>
 
+          <CapabilityNotice capability={networkCapabilities.find(n => n.blockchain === blockchain)?.capability} />
           {error && (
             <div role="alert" className="ct-error-panel px-4 py-3">
               <p className="text-sm">{error}</p>
