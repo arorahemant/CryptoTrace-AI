@@ -22,7 +22,7 @@ def test_asset_action_schema_is_versioned_and_present():
             return version, tables, columns
 
     version, tables, columns = asyncio.run(read_schema())
-    assert version == "0007_access_capability"
+    assert version == "0008_transfer_metadata"
     assert {
         "investigator_public_profiles",
         "reporter_accounts",

@@ -1,3 +1,5 @@
+from app.core.transfers import record_fields
+from app.services.destination_service import destination_context
 """
 CryptoTrace AI - AI Investigation Copilot Service
 Case-specific, grounded AI assistant.
@@ -214,15 +216,21 @@ class AIService:
         # Fetch fund flows
         ff_result = await self.db.execute(
             select(FundFlow)
-            .where(FundFlow.case_id == case_uuid, FundFlow.is_primary_path == True)
+            .where(FundFlow.case_id == case_uuid)
             .order_by(FundFlow.hop_number)
         )
-        fund_flows = ff_result.scalars().all()
+        from app.services.investigation_service import InvestigationService
+        graph = await InvestigationService(self.db).get_graph_data(str(case_uuid))
+        route = graph["primary_path"]
+        pairs = set(zip(route, route[1:]))
+        fund_flows = [flow for flow in ff_result.scalars().all() if (flow.from_address, flow.to_address) in pairs]
 
         if not wallets and not transactions:
             return None
 
         return {
+            "destination": (await destination_context(self.db, case))["selected"],
+            "run_id": (case.analysis_summary or {}).get("run_id") or f"legacy:{case.id}",
             "case": {
                 "case_number": case.case_number,
                 "title": case.title,
@@ -249,6 +257,7 @@ class AIService:
             "transactions_count": len(transactions),
             "key_transactions": [
                 {
+                    **record_fields(t),
                     "hash": t.hash,
                     "from": t.from_address,
                     "to": t.to_address,
@@ -303,6 +312,8 @@ class AIService:
             ],
             "fund_flow_path": [
                 {
+                    **record_fields(ff),
+                    "asset": ff.asset,
                     "from": ff.from_address,
                     "to": ff.to_address,
                     "amount": ff.amount,
@@ -384,7 +395,7 @@ class AIService:
                 for step in fund_flow:
                     answer_parts.append(
                         f"  → {step['from'][:12]}... → {step['to'][:12]}... "
-                        f"({step['amount']:.4f} ETH, hop {step['hop']})"
+                        f"({step.get('amount_exact') or ('approximately ' + str(step['amount']))} {step['asset']}, hop {step['hop']})"
                     )
                 sources.append("fund_flow_analysis")
             else:
@@ -417,7 +428,7 @@ class AIService:
                 for tx in transactions[:10]:
                     answer_parts.append(
                         f"  • {tx['hash']} — {tx['from'][:12]}... → {tx['to'][:12]}... "
-                        f"({tx['amount']:.4f} {tx['asset']}, hop {tx['hop']})"
+                        f"({tx.get('amount_exact') or ('approximately ' + str(tx['amount']))} {tx['asset']}, hop {tx['hop']})"
                     )
                 sources.append("transaction_records")
 
@@ -579,6 +590,6 @@ class AIService:
         if fund_flow:
             parts.append("\nPrimary Fund Flow:")
             for step in fund_flow:
-                parts.append(f"  Hop {step['hop']}: {step['from']} → {step['to']} ({step['amount']} ETH)")
+                parts.append(f"  Hop {step['hop']}: {step['from']} → {step['to']} ({step.get('amount_exact') or ('approximately ' + str(step['amount']))} {step['asset']})")
 
         return "\n".join(parts)

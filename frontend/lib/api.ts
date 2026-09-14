@@ -247,6 +247,7 @@ class ApiClient {
     description: string;
     reason?: string;
     transaction_hash?: string;
+    transfer_id?: string;
     wallet_address?: string;
     finding_id?: string;
     source?: string;

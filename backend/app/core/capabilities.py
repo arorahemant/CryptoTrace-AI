@@ -31,6 +31,8 @@ class ResultState(str, Enum):
 
 
 class CapabilityState(BaseModel):
+    run_id: str | None = None
+    model_version: int | None = None
     data_origin: DataOrigin = DataOrigin.NONE
     provider_state: ProviderState = ProviderState.NOT_CONNECTED
     processing_state: ProcessingState = ProcessingState.NOT_STARTED
@@ -55,6 +57,10 @@ def capability_for(case=None, *, blockchain=None) -> CapabilityState:
         provider="demo",
         limitations=["synthetic_data", "no_live_blockchain_provider", "no_external_action_verified"],
     )
+    legacy_snapshot = getattr(getattr(case, "status", None), "value", None) in {"completed", "review", "investigating"}
+    if case is not None and (summary or legacy_snapshot):
+        capability.run_id = summary.get("run_id") or (f"legacy:{case.id}" if getattr(case, "id", None) else None)
+        capability.model_version = summary.get("model_version")
     if summary:
         capability.processing_state = ProcessingState(summary.get("processing_state", "not_started"))
         capability.result_state = ResultState(summary.get("result_state", "not_available"))

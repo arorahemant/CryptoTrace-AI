@@ -7,6 +7,7 @@ import logging
 from datetime import timedelta
 from typing import List, Dict, Any
 from collections import defaultdict
+from app.core.transfers import asset_totals, format_totals
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,10 @@ class PatternEngine:
         findings.extend(self.detect_layering(transactions, paths))
         findings.extend(self.detect_repeated_connections(transactions))
 
+        for finding in findings:
+            finding.setdefault("metadata", {})
+            finding["metadata"]["transfer_volume_by_asset"] = asset_totals(
+                tx for tx in transactions if tx.get("transfer_id") in finding["metadata"].get("supporting_transfer_ids", []))
         return findings
 
     def detect_rapid_movement(
@@ -75,6 +80,8 @@ class PatternEngine:
                 for out_tx in outgoing:
                     inc_time = inc_tx.get("timestamp")
                     out_time = out_tx.get("timestamp")
+                    if inc_tx.get("asset_id", inc_tx.get("asset")) != out_tx.get("asset_id", out_tx.get("asset")):
+                        continue
                     if not inc_time or not out_time:
                         continue
 
@@ -88,8 +95,8 @@ class PatternEngine:
                             "description": (
                                 f"Funds were transferred onward from {address[:12]}... "
                                 f"within {minutes:.0f} minutes of receipt. "
-                                f"Received {inc_tx['amount']:.4f} {inc_tx.get('asset', 'ETH')}, "
-                                f"sent {out_tx['amount']:.4f} {out_tx.get('asset', 'ETH')}."
+                                f"Received {inc_tx.get('amount_exact', inc_tx['amount'])} {inc_tx.get('asset', 'ETH')}, "
+                                f"sent {out_tx.get('amount_exact', out_tx['amount'])} {out_tx.get('asset', 'ETH')}."
                             ),
                             "severity": "high" if minutes < 10 else "medium",
                             "confidence": min(0.9, 0.5 + (1 - minutes / 30) * 0.4),
@@ -97,11 +104,12 @@ class PatternEngine:
                             "affected_wallets": [address],
                             "supporting_transaction_ids": [inc_tx["hash"], out_tx["hash"]],
                             "metadata": {
+                                "supporting_transfer_ids": [t["transfer_id"] for t in (inc_tx, out_tx) if t.get("transfer_id")],
                                 "receipt_tx": inc_tx["hash"],
                                 "onward_tx": out_tx["hash"],
                                 "time_difference_minutes": round(minutes, 1),
-                                "amount_received": inc_tx["amount"],
-                                "amount_sent": out_tx["amount"],
+                                "amount_received": inc_tx.get("amount_exact"),
+                                "amount_sent": out_tx.get("amount_exact"),
                             },
                         })
 
@@ -122,14 +130,14 @@ class PatternEngine:
         for address, out_txs in outgoing_by_wallet.items():
             destinations = set(tx["to_address"] for tx in out_txs)
             if len(destinations) >= self.split_threshold:
-                total_amount = sum(tx["amount"] for tx in out_txs)
+                total_amount = format_totals(out_txs)
                 findings.append({
                     "pattern_type": "fund_splitting",
                     "pattern_name": "Fund Splitting Detected",
                     "description": (
                         f"Wallet {address[:12]}... distributed funds to "
                         f"{len(destinations)} different wallets "
-                        f"(total: {total_amount:.4f} ETH). "
+                        f"(total: {total_amount}). "
                         f"This may indicate an attempt to obscure the money trail."
                     ),
                     "severity": "high" if len(destinations) >= 5 else "medium",
@@ -138,6 +146,7 @@ class PatternEngine:
                     "affected_wallets": [address] + list(destinations),
                     "supporting_transaction_ids": [tx["hash"] for tx in out_txs],
                     "metadata": {
+                        "supporting_transfer_ids": [t["transfer_id"] for t in out_txs if t.get("transfer_id")],
                         "source_wallet": address,
                         "destination_count": len(destinations),
                         "destinations": list(destinations),
@@ -162,14 +171,14 @@ class PatternEngine:
         for address, inc_txs in incoming_by_wallet.items():
             sources = set(tx["from_address"] for tx in inc_txs)
             if len(sources) >= self.consolidation_threshold:
-                total_amount = sum(tx["amount"] for tx in inc_txs)
+                total_amount = format_totals(inc_txs)
                 findings.append({
                     "pattern_type": "fund_consolidation",
                     "pattern_name": "Fund Consolidation Detected",
                     "description": (
                         f"Wallet {address[:12]}... received funds from "
                         f"{len(sources)} different wallets "
-                        f"(total: {total_amount:.4f} ETH). "
+                        f"(total: {total_amount}). "
                         f"This may indicate consolidation of distributed funds."
                     ),
                     "severity": "high" if len(sources) >= 5 else "medium",
@@ -178,6 +187,7 @@ class PatternEngine:
                     "affected_wallets": list(sources) + [address],
                     "supporting_transaction_ids": [tx["hash"] for tx in inc_txs],
                     "metadata": {
+                        "supporting_transfer_ids": [t["transfer_id"] for t in inc_txs if t.get("transfer_id")],
                         "receiving_wallet": address,
                         "source_count": len(sources),
                         "sources": list(sources),
@@ -203,7 +213,6 @@ class PatternEngine:
                     for tx in transactions:
                         if tx["from_address"] == path[i] and tx["to_address"] == path[i + 1]:
                             path_txs.append(tx)
-                            break
 
                 if path_txs:
                     findings.append({
@@ -221,7 +230,8 @@ class PatternEngine:
                         "affected_wallets": path,
                         "supporting_transaction_ids": [tx["hash"] for tx in path_txs],
                         "metadata": {
-                            "path": path,
+                            "supporting_transfer_ids": [t["transfer_id"] for t in path_txs if t.get("transfer_id")],
+                        "path": path,
                             "hop_count": len(path) - 1,
                             "path_transactions": [tx["hash"] for tx in path_txs],
                         },
@@ -252,14 +262,14 @@ class PatternEngine:
 
         for (from_addr, to_addr), txs in pair_txs.items():
             if len(txs) >= 2:
-                total_amount = sum(tx["amount"] for tx in txs)
+                total_amount = format_totals(txs)
                 findings.append({
                     "pattern_type": "repeated_connections",
                     "pattern_name": "Repeated Wallet Connections",
                     "description": (
                         f"Detected {len(txs)} transactions between "
                         f"{from_addr[:12]}... and {to_addr[:12]}... "
-                        f"(total: {total_amount:.4f} ETH). "
+                        f"(total: {total_amount}). "
                         f"Repeated connections may indicate a persistent relationship."
                     ),
                     "severity": "medium",
@@ -268,6 +278,7 @@ class PatternEngine:
                     "affected_wallets": [from_addr, to_addr],
                     "supporting_transaction_ids": [tx["hash"] for tx in txs],
                     "metadata": {
+                        "supporting_transfer_ids": [t["transfer_id"] for t in txs if t.get("transfer_id")],
                         "from_wallet": from_addr,
                         "to_wallet": to_addr,
                         "transaction_count": len(txs),

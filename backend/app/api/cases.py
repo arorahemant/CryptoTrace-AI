@@ -1,3 +1,5 @@
+from app.core.transfers import record_fields, FIELDS
+from app.services.destination_service import destination_context
 """
 CryptoTrace AI - Cases & Investigation API
 Core investigation endpoints — the heart of the product.
@@ -415,6 +417,7 @@ async def get_wallets(
         "capability": capability_payload(case),
         "wallets": [
             {
+                **(w.metadata_ or {}),
                 "id": str(w.id),
                 "address": w.address,
                 "label": w.label,
@@ -452,6 +455,7 @@ async def get_transactions(
         "capability": capability_payload(case),
         "transactions": [
             {
+                **record_fields(t),
                 "id": str(t.id),
                 "hash": t.hash,
                 "blockchain": t.blockchain.value if t.blockchain else "demo",
@@ -487,6 +491,7 @@ async def get_findings(
     findings = result.scalars().all()
     return {
         "capability": capability_payload(case),
+        "destination": (await destination_context(db, case))["selected"],
         "findings": [
             {
                 "id": str(f.id),
@@ -497,6 +502,7 @@ async def get_findings(
                 "confidence": f.confidence,
                 "trigger": f.trigger,
                 "affected_wallets": f.affected_wallets,
+                "supporting_transfer_ids": (f.metadata_ or {}).get("supporting_transfer_ids", []),
                 "supporting_transaction_ids": f.supporting_transaction_ids,
                 "created_at": f.created_at.isoformat() if f.created_at else None,
             }
@@ -522,15 +528,26 @@ async def save_evidence(
         if not finding or finding.case_id != case.id:
             raise HTTPException(status_code=400, detail="Finding does not belong to this case")
 
-    if request.transaction_hash:
-        transaction = await db.scalar(
-            select(Transaction).where(
-                Transaction.case_id == case.id,
-                Transaction.hash == request.transaction_hash,
-            )
-        )
-        if not transaction:
+    transaction = None
+    if request.transfer_id or request.transaction_hash:
+        query = select(Transaction).where(Transaction.case_id == case.id)
+        if request.transfer_id:
+            if request.transfer_id.startswith("legacy:"):
+                try:
+                    legacy_id = uuid.UUID(request.transfer_id.removeprefix("legacy:"))
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid legacy transfer identity")
+                query = query.where(Transaction.id == legacy_id, Transaction.transfer_id.is_(None))
+            else:
+                query = query.where(Transaction.transfer_id == request.transfer_id)
+        if request.transaction_hash:
+            query = query.where(Transaction.hash == request.transaction_hash)
+        matches = (await db.scalars(query)).all()
+        if not matches:
             raise HTTPException(status_code=400, detail="Transaction does not belong to this case")
+        if len(matches) > 1:
+            raise HTTPException(status_code=422, detail="Select a transfer_id: transaction contains multiple events")
+        transaction = matches[0]
 
     if request.wallet_address:
         wallet = await db.scalar(
@@ -545,7 +562,7 @@ async def save_evidence(
     evidence = Evidence(
         case_id=case.id,
         finding_id=request.finding_id,
-        transaction_hash=request.transaction_hash,
+        transaction_hash=transaction.hash if transaction else request.transaction_hash,
         wallet_address=request.wallet_address,
         evidence_type=request.evidence_type,
         title=request.title,
@@ -553,7 +570,7 @@ async def save_evidence(
         reason=request.reason,
         source=request.source,
         is_bookmarked=True,
-        metadata_=request.metadata,
+        metadata_={**{k: v for k, v in (request.metadata or {}).items() if k not in FIELDS}, **(record_fields(transaction) if transaction else {})},
     )
     db.add(evidence)
     await db.flush()
@@ -576,6 +593,7 @@ async def save_evidence(
         "title": evidence.title,
         "description": evidence.description,
         "reason": evidence.reason,
+        "transfer_id": (evidence.metadata_ or {}).get("transfer_id"),
         "transaction_hash": evidence.transaction_hash,
         "wallet_address": evidence.wallet_address,
         "source": evidence.source,
@@ -607,6 +625,7 @@ async def get_evidence(
                 "title": e.title,
                 "description": e.description,
                 "reason": e.reason,
+                "transfer_id": (e.metadata_ or {}).get("transfer_id"),
                 "transaction_hash": e.transaction_hash,
                 "wallet_address": e.wallet_address,
                 "source": e.source,
@@ -642,9 +661,11 @@ async def get_timeline(
                 "title": e.title,
                 "description": e.description,
                 "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+                "transfer_id": (e.metadata_ or {}).get("transfer_id"),
                 "transaction_hash": e.transaction_hash,
                 "from_address": e.from_address,
                 "to_address": e.to_address,
+                **record_fields(e),
                 "amount": e.amount,
                 "asset": e.asset,
                 "sequence_order": e.sequence_order,
@@ -675,6 +696,7 @@ async def get_fund_flow(
             {
                 "from_address": f.from_address,
                 "to_address": f.to_address,
+                **record_fields(f),
                 "amount": f.amount,
                 "asset": f.asset,
                 "hop_number": f.hop_number,
@@ -755,7 +777,8 @@ async def generate_report(
     ai_service = AIService(db)
     context = await ai_service._build_context(case.id)
 
-    sections = [{"title": "Data and capability", "section_type": "analysis", "content": "DEMO DATA - synthetic investigation. Not a live blockchain observation. Processing completion does not close the case. No external freeze or government action is verified."}]
+    data_label = "DEMO DATA - synthetic investigation. Not a live blockchain observation." if capability_payload(case)["data_origin"] == "demo" else "No verified live blockchain observation is claimed by this report."
+    sections = [{"title": "Data and capability", "section_type": "analysis", "content": data_label + " Processing completion does not close the case. No external freeze or government action is verified."}]
 
     # Case Information (FACT)
     sections.append({
@@ -780,7 +803,7 @@ async def generate_report(
             for step in fund_flow:
                 flow_text += (
                     f"Hop {step['hop']}: {step['from'][:16]}... → "
-                    f"{step['to'][:16]}... ({step['amount']:.4f} ETH)\n"
+                    f"{step['to'][:16]}... ({step.get('amount_exact') or ('approximately ' + str(step['amount']))} {step['asset']})\n"
                 )
             sections.append({
                 "title": "Fund Flow Analysis",
@@ -846,10 +869,12 @@ async def generate_report(
             f"{case.reported_wallet[:16]}...\n\n"
             f"Key findings: {len(findings)} suspicious patterns detected. "
         )
-        if vasps:
+        selected = context.get("destination")
+        selected_vasp = next((v for v in vasps if selected and v["wallet"] == selected["address"]), None)
+        if selected_vasp:
             summary_text += (
                 f"Funds were traced to a wallet attributed to "
-                f"{vasps[0]['entity']} ({vasps[0]['confidence']} confidence). "
+                f"{selected_vasp['entity']} ({selected_vasp['confidence']} confidence). "
             )
         summary_text += "This report is generated from structured investigation data."
 
@@ -862,6 +887,9 @@ async def generate_report(
             "content": summary_text,
         })
 
+    selected = context.get("destination") if context else None
+    sections.append({"title": "Destination selection and run", "section_type": "analysis",
+                     "content": f"Run: {(case.analysis_summary or {}).get('run_id') or 'legacy:' + str(case.id)}. Candidate: {selected}. This is a bounded structural route, not proof of current custody or recoverable funds."})
     # Save report
     report = Report(
         case_id=case.id,

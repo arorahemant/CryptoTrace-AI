@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Set, Tuple
 from collections import deque
 from app.providers.base import BlockchainProvider
+from app.core.transfers import normalize_transfer, asset_totals
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +45,16 @@ class TraceEngine:
               - paths: List of traced paths
               - stats: Tracing statistics
         """
+        if not 1 <= max_hops <= 20 or not 1 <= max_transactions <= 10000:
+            raise ValueError("Trace bounds must be positive and bounded")
+        if direction not in {"incoming", "outgoing", "both"}:
+            raise ValueError("Invalid trace direction")
+        if not Decimal(str(min_amount)).is_finite() or min_amount < 0:
+            raise ValueError("Invalid minimum amount")
         visited_addresses: Set[str] = set()
-        visited_tx_hashes: Set[str] = set()
+        visited_transfer_ids: Set[str] = set()
+        event_records = {}
+        asset_decimals = {}
         all_transactions: List[Dict[str, Any]] = []
         discovered_wallets: Dict[str, Dict[str, Any]] = {}
         paths: List[List[str]] = []
@@ -75,6 +85,7 @@ class TraceEngine:
             "total_received": 0.0,
             "total_sent": 0.0,
             "transaction_count": 0,
+            "expansion_state": "pending",
         }
 
         total_tx_count = 0
@@ -82,7 +93,12 @@ class TraceEngine:
         while queue and total_tx_count < max_transactions:
             current_address, hop, current_path = queue.popleft()
 
+            if current_address in visited_addresses:
+                paths.append(current_path)
+                continue
+
             if hop >= max_hops:
+                discovered_wallets[current_address]["expansion_state"] = "hop_limit"
                 # Record path at max depth
                 paths.append(current_path)
                 continue
@@ -93,6 +109,7 @@ class TraceEngine:
                 continue
 
             visited_addresses.add(current_address)
+            discovered_wallets[current_address]["expansion_state"] = "expanded"
 
             # Fetch transactions from provider
             try:
@@ -106,6 +123,7 @@ class TraceEngine:
                 )
             except Exception:
                 provider_errors += 1
+                discovered_wallets[current_address]["expansion_state"] = "provider_error"
                 logger.exception("Provider error fetching transactions for %s", current_address)
                 paths.append(current_path)
                 continue
@@ -116,16 +134,24 @@ class TraceEngine:
 
             if not isinstance(txs, list):
                 provider_errors += 1
+                discovered_wallets[current_address]["expansion_state"] = "provider_error"
                 logger.error("Provider returned a non-list transaction response for %s", current_address)
                 paths.append(current_path)
                 continue
 
+            if len(txs) >= 50:
+                discovered_wallets[current_address]["expansion_state"] = "provider_limit"
             valid_txs = []
             for tx in txs:
                 if self._is_valid_transaction(tx):
-                    valid_txs.append(tx)
+                    try:
+                        valid_txs.append(normalize_transfer(tx, chain, legacy_demo=self.provider.is_demo))
+                    except (ValueError, KeyError, TypeError):
+                        malformed_transactions += 1
+                        discovered_wallets[current_address]["expansion_state"] = "malformed_response"
                 else:
                     malformed_transactions += 1
+                    discovered_wallets[current_address]["expansion_state"] = "malformed_response"
                     logger.warning("Provider returned malformed transaction data for %s", current_address)
 
             if not valid_txs:
@@ -140,15 +166,28 @@ class TraceEngine:
                 if total_tx_count >= max_transactions:
                     break
 
-                tx_hash = tx.get("hash", "")
-                if tx_hash in visited_tx_hashes:
+                tx_hash = tx["transfer_id"]
+                signature = (tx["from_address"], tx["to_address"], tx["asset_id"], tx["amount_base_units"], tx["token_decimals"])
+                if (tx_hash in event_records and event_records[tx_hash] != signature) or (
+                    tx["asset_id"] in asset_decimals and asset_decimals[tx["asset_id"]] != tx["token_decimals"]):
+                    malformed_transactions += 1
+                    discovered_wallets[current_address]["expansion_state"] = "malformed_response"
+                    continue
+                event_records[tx_hash] = signature
+                asset_decimals[tx["asset_id"]] = tx["token_decimals"]
+                if tx_hash in visited_transfer_ids:
                     continue
 
                 # Filter by minimum amount
-                if tx.get("amount", 0) < min_amount:
+                if Decimal(tx["amount_exact"]) < Decimal(str(min_amount)):
+                    discovered_wallets[current_address]["expansion_state"] = "amount_filter"
                     continue
 
-                visited_tx_hashes.add(tx_hash)
+                if not ((direction in ("outgoing", "both") and tx["from_address"] == current_address)
+                        or (direction in ("incoming", "both") and tx["to_address"] == current_address)):
+                    malformed_transactions += 1
+                    continue
+                visited_transfer_ids.add(tx_hash)
                 tx["hop_number"] = hop + 1 if tx["from_address"] == current_address else hop
                 all_transactions.append(tx)
                 total_tx_count += 1
@@ -175,6 +214,7 @@ class TraceEngine:
                         "total_received": 0.0,
                         "total_sent": 0.0,
                         "transaction_count": 0,
+            "expansion_state": "pending",
                     }
 
                 # Update wallet stats
@@ -187,10 +227,16 @@ class TraceEngine:
             if not has_outgoing:
                 paths.append(current_path)
 
+        for address, wallet in discovered_wallets.items():
+            if wallet["expansion_state"] == "pending":
+                wallet["expansion_state"] = "transaction_limit"
+        if total_tx_count >= max_transactions:
+            discovered_wallets[current_address]["expansion_state"] = "transaction_limit"
+
         # Update wallet stats for starting address
         self._finalize_wallet_metadata(discovered_wallets, all_transactions)
 
-        trace_is_partial = provider_errors > 0 or malformed_transactions > 0 or (total_tx_count >= max_transactions)
+        trace_is_partial = provider_errors > 0 or malformed_transactions > 0 or any(w["expansion_state"] != "expanded" for w in discovered_wallets.values())
         # A bounded result is not an exhaustive blockchain history.
 
         return {
@@ -203,7 +249,9 @@ class TraceEngine:
                 "max_hop_reached": max(
                     (tx.get("hop_number", 0) for tx in all_transactions), default=0
                 ),
-                "total_amount_traced": sum(tx.get("amount", 0) for tx in all_transactions),
+                "total_amount_traced": None,  # deprecated: volume is not unique traced funds
+                "transfer_volume_by_asset": asset_totals(all_transactions),
+                "origin_outflow_by_asset": asset_totals(tx for tx in all_transactions if tx["from_address"] == starting_address),
                 "provider": self.provider.provider_name,
                 "is_demo": self.provider.is_demo,
                 "provider_errors": provider_errors,
@@ -211,7 +259,7 @@ class TraceEngine:
                 "trace_status": "partial" if trace_is_partial else "complete",
                 "trace_warning": (
                     "Trace incomplete: a transaction limit was reached or provider responses were unavailable "
-                    "or malformed; results may be incomplete."
+                    "or malformed, or a hop/filter limit was reached; results may be incomplete."
                     if trace_is_partial
                     else None
                 ),
@@ -229,7 +277,7 @@ class TraceEngine:
         if not isinstance(tx.get("timestamp"), datetime):
             return False
         amount = tx.get("amount")
-        return isinstance(amount, (int, float)) and amount >= 0
+        return "amount_base_units" in tx or (isinstance(amount, (int, float)) and amount >= 0)
 
     def _prioritize_transactions(
         self, txs: List[Dict], address: str, direction: str
@@ -238,43 +286,28 @@ class TraceEngine:
         Rank transactions by investigation relevance.
         Uses deterministic explainable signals — NOT ML.
         """
-        def relevance_score(tx: Dict) -> float:
-            score = 0.0
-            # Higher amount = more relevant
-            score += min(tx.get("amount", 0) * 10, 100)
-            # Outgoing from current address = follow the money
-            if tx.get("from_address") == address:
-                score += 50
-            # Temporal proximity to other transactions (rapid movement)
-            score += 10
-            return score
-
-        return sorted(txs, key=relevance_score, reverse=True)
+        # Asset-neutral, reproducible ordering; no implicit FX comparison.
+        return sorted(txs, key=lambda tx: (tx["timestamp"], tx["transfer_id"]))
 
     def _update_wallet_stats(self, wallets: Dict, tx: Dict):
         """Update running statistics for wallets involved in a transaction."""
         from_addr = tx.get("from_address", "")
         to_addr = tx.get("to_address", "")
-        amount = tx.get("amount", 0)
-
         if from_addr in wallets:
-            wallets[from_addr]["total_sent"] += amount
             wallets[from_addr]["transaction_count"] += 1
-
         if to_addr in wallets:
-            wallets[to_addr]["total_received"] += amount
             wallets[to_addr]["transaction_count"] += 1
 
     def _finalize_wallet_metadata(self, wallets: Dict, transactions: List[Dict]):
-        """Post-processing: identify intermediaries and destinations."""
         for address, wallet in wallets.items():
-            if wallet["is_reported"]:
-                continue
-
-            has_incoming = wallet["total_received"] > 0
-            has_outgoing = wallet["total_sent"] > 0
-
-            if has_incoming and has_outgoing:
-                wallet["is_intermediary"] = True
-            elif has_incoming and not has_outgoing:
-                wallet["is_destination"] = True
+            incoming = [tx for tx in transactions if tx["to_address"] == address]
+            outgoing = [tx for tx in transactions if tx["from_address"] == address]
+            wallet["received_by_asset"] = asset_totals(incoming)
+            wallet["sent_by_asset"] = asset_totals(outgoing)
+            # Legacy single-asset projections; exact arrays are authoritative.
+            wallet["total_received"] = float(wallet["received_by_asset"][0]["amount_exact"]) if len(wallet["received_by_asset"]) == 1 else 0
+            wallet["total_sent"] = float(wallet["sent_by_asset"][0]["amount_exact"]) if len(wallet["sent_by_asset"]) == 1 else 0
+            wallet["is_intermediary"] = bool(incoming and outgoing and not wallet["is_reported"])
+            wallet["endpoint_kind"] = ("not_expanded" if wallet["expansion_state"] != "expanded"
+                                       else "last_observed_wallet" if incoming and not outgoing else "intermediary")
+            wallet["is_destination"] = wallet["endpoint_kind"] == "last_observed_wallet"

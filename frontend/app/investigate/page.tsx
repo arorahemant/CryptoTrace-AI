@@ -3,6 +3,7 @@
 import { Fragment, Suspense, useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api, { ApiError } from '@/lib/api';
+import { displayAmount, displayTotals, type ExactTransfer, type AssetTotal, type DestinationCandidate } from '@/lib/transfers';
 import { CapabilityNotice } from '@/components/CapabilityNotice';
 import { capabilityLabel, hasAnalysis, type CapabilityState } from '@/lib/capabilities';
 import { ReplayBar } from '@/components/investigation/ReplayBar';
@@ -22,6 +23,10 @@ import 'reactflow/dist/style.css';
 
 // ─── Types ────────────────────────────────────────────────────
 interface GraphNodeData {
+  endpoint_kind?: string;
+  expansion_state?: string;
+  received_by_asset?: AssetTotal[];
+  sent_by_asset?: AssetTotal[];
   id?: string;
   address: string;
   label?: ReactNode;
@@ -49,7 +54,7 @@ interface GraphNodeData {
   risk_signals?: Array<{ signal_name?: string; description?: string; score_contribution?: number }>;
 }
 
-interface GraphEdgeData {
+interface GraphEdgeData extends ExactTransfer {
   id: string;
   source: string;
   target: string;
@@ -61,7 +66,7 @@ interface GraphEdgeData {
   hop_number?: number;
 }
 
-interface GraphResponse { nodes: GraphNodeData[]; edges: GraphEdgeData[]; primary_path: string[]; }
+interface GraphResponse { destination?: DestinationCandidate | null; nodes: GraphNodeData[]; edges: GraphEdgeData[]; primary_path: string[]; }
 interface FindingData {
   id?: string;
   pattern_type?: string;
@@ -75,10 +80,10 @@ interface FindingData {
   created_at?: string;
 }
 interface EvidenceData { id: string; evidence_type?: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; finding_id?: string; source?: string; created_at?: string; is_bookmarked?: boolean; }
-interface ActionReadiness { case_id: string; ready: boolean; destination_wallet?: string | null; asset?: string | null; observed_amount?: number | null; last_movement_at?: string | null; attribution_status: string; attribution_confidence: string; attribution_entity?: string | null; attribution_provenance?: string; attribution_source_reference?: string | null; attribution_reasoning?: string | null; attribution_evidence_ids?: string[]; attribution_transaction_hashes?: string[]; supporting_transaction_hash?: string | null; supporting_finding_id?: string | null; evidence_count: number; evidence_ids: string[]; finding_ids: string[]; checks: Array<{ key: string; label: string; complete: boolean }>; }
+interface ActionReadiness { transfer?: ExactTransfer; destination?: DestinationCandidate | null; case_id: string; ready: boolean; destination_wallet?: string | null; asset?: string | null; observed_amount?: number | null; last_movement_at?: string | null; attribution_status: string; attribution_confidence: string; attribution_entity?: string | null; attribution_provenance?: string; attribution_source_reference?: string | null; attribution_reasoning?: string | null; attribution_evidence_ids?: string[]; attribution_transaction_hashes?: string[]; supporting_transaction_hash?: string | null; supporting_finding_id?: string | null; evidence_count: number; evidence_ids: string[]; finding_ids: string[]; checks: Array<{ key: string; label: string; complete: boolean }>; }
 interface ActionRequest { id: string; case_id: string; actor_id: string; target_wallet: string; action_type: string; status: string; evidence_ids: string[]; finding_ids: string[]; observed_asset?: string | null; observed_amount?: number | null; last_movement_at?: string | null; attribution_status: string; attribution_confidence: string; attribution_entity?: string | null; attribution_provenance?: string; attribution_source_reference?: string | null; attribution_reasoning?: string | null; supporting_reason?: string | null; created_at: string; updated_at: string; }
 interface Recommendation { recommendation_id: string; case_id: string; type: string; title: string; action: string; factual_reason: string; priority: 'high' | 'medium' | 'low'; evidence_ids: string[]; transaction_hashes: string[]; finding_ids: string[]; target_wallet?: string | null; deterministic_source: string; created_at: string; }
-interface TransactionData {
+interface TransactionData extends ExactTransfer {
   id?: string;
   hash: string;
   from_address: string;
@@ -91,9 +96,9 @@ interface TransactionData {
   is_suspicious?: boolean;
   hop_number?: number;
 }
-interface TimelineEvent { id?: string; title: string; description?: string; timestamp?: string; transaction_hash?: string; sequence_order?: number; }
+interface TimelineEvent extends ExactTransfer { id?: string; title: string; description?: string; timestamp?: string; transaction_hash?: string; sequence_order?: number; }
 interface AuditEvent { id: string; action: string; resource_type?: string | null; resource_id?: string | null; details?: Record<string, unknown> | null; actor: string; timestamp?: string | null; }
-interface ReplayEvent {
+interface ReplayEvent extends ExactTransfer {
   event_id?: string;
   step: number;
   event_type: string;
@@ -107,7 +112,7 @@ interface ReplayEvent {
   transaction_hash?: string | null;
   highlight_nodes?: string[];
   highlight_edges?: string[];
-  cumulative_amount?: number;
+  cumulative_amount?: number | null;
 }
 interface CaseAssignment {
   investigator_id: string;
@@ -132,7 +137,7 @@ interface InvestigationData {
   findings: FindingData[];
   risk: { overall: string; by_wallet: Record<string, { score?: number; category?: string }> };
   vasp_attributions: Record<string, { entity_name?: string; confidence?: string }>;
-  fund_flow_summary: Record<string, unknown>;
+  fund_flow_summary: { origin_outflow_by_asset?: AssetTotal[]; max_hops?: number; paths_count?: number };
 }
 
 // ─── Node Colors ──────────────────────────────────────────────
@@ -456,7 +461,7 @@ function InvestigateContent() {
                 </div>
               )}
               {n.is_reported && <div className="text-[8px] text-red-300 mt-0.5">⚠ REPORTED</div>}
-              {n.is_destination && <div className="text-[8px] text-purple-300 mt-0.5">◆ DESTINATION</div>}
+              {n.endpoint_kind && <div className="text-[8px] text-slate-400 mt-0.5">{n.endpoint_kind.replaceAll('_', ' ').toUpperCase()}</div>}
             </div>
           ),
           ...n,
@@ -481,7 +486,7 @@ function InvestigateContent() {
         source: e.source,
         target: e.target,
         data: e,
-        label: `${e.amount?.toFixed(3)} ${e.asset || 'ETH'}`,
+        label: `${displayAmount(e)} ${e.asset || ''}`,
         labelStyle: { fill: '#526168', fontSize: 10, fontFamily: 'monospace' },
         labelBgStyle: { fill: '#fafaf5', fillOpacity: 0.95 },
         style: {
@@ -593,7 +598,7 @@ function InvestigateContent() {
       const onPrimary = primaryPath.has(edge.source) && primaryPath.has(edge.target);
       const isCurrent = Boolean(
         highlightEdges.has(edge.id)
-        || (event?.transaction_hash && edgeData?.hash === event.transaction_hash),
+        || (!event?.transfer_id && event?.transaction_hash && edgeData?.hash === event.transaction_hash),
       );
       return {
         ...edge,
@@ -614,7 +619,7 @@ function InvestigateContent() {
     // event currently shown in the replay bar.
     if (event) {
       const transaction = event.transaction_hash
-        ? transactions.find(item => item.hash === event.transaction_hash) || null
+        ? transactions.find(item => event.transfer_id ? item.transfer_id === event.transfer_id : item.hash === event.transaction_hash) || null
         : null;
       const supportingEvidence = event.transaction_hash
         ? evidence.find(item => item.transaction_hash === event.transaction_hash) || null
@@ -658,9 +663,10 @@ function InvestigateContent() {
       const saved = await api.saveEvidence(caseId, {
         evidence_type: 'transaction',
         title: `Transaction ${transaction.hash.slice(0, 14)}…`,
-        description: `Observed ${transaction.amount?.toFixed?.(4) || transaction.amount} ${transaction.asset || 'ETH'} movement from ${transaction.from_address} to ${transaction.to_address}.`,
+        description: `Observed ${displayAmount(transaction)} ${transaction.asset || ''} movement from ${transaction.from_address} to ${transaction.to_address}.`,
         reason: 'Selected by investigator as supporting evidence for the traced money trail.',
         transaction_hash: transaction.hash,
+        transfer_id: transaction.transfer_id,
         wallet_address: transaction.to_address,
         source: 'investigator',
       });
@@ -748,7 +754,7 @@ function InvestigateContent() {
   };
 
   const onEdgeClick = (_: React.MouseEvent, edge: Edge<GraphEdgeData>) => {
-    const transaction = transactions.find(item => item.hash === edge.data?.hash || item.hash === edge.id);
+    const transaction = transactions.find(item => item.transfer_id === edge.id || (!edge.data?.transfer_id && item.hash === edge.data?.hash));
     if (transaction) {
       setSelectedTransaction(transaction);
       setActiveTab('transactions');
@@ -756,7 +762,13 @@ function InvestigateContent() {
   };
 
   const selectTransactionByHash = (hash: string) => {
-    const transaction = transactions.find(item => item.hash === hash);
+    const matches = transactions.filter(item => item.hash === hash);
+    if (matches.length > 1) {
+      setActiveTab('transactions');
+      setActionError('This transaction contains multiple transfer events. Select the required event from the transaction list.');
+      return;
+    }
+    const transaction = matches[0];
     if (!transaction) {
       setActionError('The supporting transaction is not available in this case.');
       return;
@@ -804,7 +816,7 @@ function InvestigateContent() {
       const events = await loadReplay();
       const index = events.findIndex(event =>
         (timelineEvent.id && event.event_id === timelineEvent.id)
-        || (timelineEvent.transaction_hash && event.transaction_hash === timelineEvent.transaction_hash)
+        || (timelineEvent.transfer_id ? event.transfer_id === timelineEvent.transfer_id : timelineEvent.transaction_hash && event.transaction_hash === timelineEvent.transaction_hash)
         || (!timelineEvent.transaction_hash && timelineEvent.timestamp && event.timestamp === timelineEvent.timestamp),
       );
       if (index >= 0) {
@@ -866,10 +878,9 @@ function InvestigateContent() {
   const intermediaryCount = nodes.filter((node) => node.data.is_intermediary).length;
   const destinationCount = nodes.filter((node) => node.data.is_destination).length;
   const strongestFinding = getStrongestFinding(findings);
-  const amountTraced = Number(investigation?.fund_flow_summary?.total_amount_origin || 0);
-  const traceAsset = transactions.find((transaction) => transaction.asset)?.asset;
+  const originTotals: AssetTotal[] = investigation?.fund_flow_summary?.origin_outflow_by_asset || [];
   const primaryPath = investigation?.primary_path || investigation?.graph?.primary_path || [];
-  const destinationNode = nodes.find((node) => node.data.is_destination)?.data;
+  const destinationNode = nodes.find((node) => node.id === investigation?.graph?.destination?.address)?.data;
   const investigationNarrative = buildInvestigationNarrative({
     walletCount: nodes.length,
     transactionCount: transactions.length,
@@ -953,7 +964,7 @@ function InvestigateContent() {
             </div>
             {[
               { label: 'Risk', value: riskCategory },
-              { label: 'Amount traced', value: amountTraced > 0 ? `${amountTraced.toFixed(2)} ${traceAsset || 'asset'}` : '—' },
+              { label: 'Origin outflow by asset', value: displayTotals(originTotals) },
               { label: 'Maximum hops', value: traceHopCount || '—' },
               { label: 'Wallets', value: nodes.length },
               { label: 'Transactions', value: transactions.length },
@@ -1145,8 +1156,8 @@ function InvestigateContent() {
                     {primaryPath.slice(0, 6).map((address, index) => {
                       const node = nodes.find((item) => item.data.address === address)?.data;
                       const movement = index > 0 ? transactions.find((transaction) => transaction.from_address === primaryPath[index - 1] && transaction.to_address === address) : undefined;
-                      const role = node?.is_reported ? 'Reported wallet' : node?.is_destination ? (node.vasp_name ? 'Attributed destination (review required)' : 'Observed boundary wallet') : `Hop ${node?.hop_distance ?? index}`;
-                      return <li key={address} className="grid grid-cols-[1rem_1fr] gap-1.5 text-[10px]"><span className="font-mono text-[var(--ct-primary)]">{index === 0 ? '●' : '↓'}</span><button type="button" onClick={() => selectWalletByAddress(address)} className="min-w-0 text-left"><span className="flex items-center justify-between gap-2 font-semibold text-slate-300"><span>{role}</span>{movement && <span className="shrink-0 font-mono text-[9px] text-[var(--ct-primary)]">{movement.amount?.toFixed(3)} {movement.asset}</span>}</span><span className="block truncate font-mono text-slate-500">{address}</span></button></li>;
+                      const role = node?.is_reported ? 'Reported wallet' : node?.is_destination ? (node.vasp_name ? 'Attributed destination (review required)' : 'Last wallet observed') : node?.endpoint_kind === 'not_expanded' ? `Not expanded (${node.expansion_state})` : `Hop ${node?.hop_distance ?? index}`;
+                      return <li key={address} className="grid grid-cols-[1rem_1fr] gap-1.5 text-[10px]"><span className="font-mono text-[var(--ct-primary)]">{index === 0 ? '●' : '↓'}</span><button type="button" onClick={() => selectWalletByAddress(address)} className="min-w-0 text-left"><span className="flex items-center justify-between gap-2 font-semibold text-slate-300"><span>{role}</span>{movement && <span className="shrink-0 font-mono text-[9px] text-[var(--ct-primary)]">{displayAmount(movement)} {movement.asset}</span>}</span><span className="block truncate font-mono text-slate-500">{address}</span></button></li>;
                     })}
                   </ol>
                 ) : <p className="mt-2 text-[10px] text-slate-500">No primary money trail is available.</p>}
@@ -1209,11 +1220,11 @@ function InvestigateContent() {
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-[var(--ct-surface)] rounded-lg p-2 border border-[var(--ct-outline-variant)]">
                   <div className="text-[10px] text-slate-500">Received</div>
-                  <div className="text-xs text-green-400 font-mono">{selectedNode.total_received?.toFixed(4)}</div>
+                  <div className="text-xs text-green-400 font-mono">{displayTotals(selectedNode.received_by_asset)}</div>
                 </div>
                 <div className="bg-[var(--ct-surface)] rounded-lg p-2 border border-[var(--ct-outline-variant)]">
                   <div className="text-[10px] text-slate-500">Sent</div>
-                  <div className="text-xs text-red-400 font-mono">{selectedNode.total_sent?.toFixed(4)}</div>
+                  <div className="text-xs text-red-400 font-mono">{displayTotals(selectedNode.sent_by_asset)}</div>
                 </div>
               </div>
 
@@ -1301,7 +1312,7 @@ function InvestigateContent() {
                     <div className="grid grid-cols-2 gap-2 text-[10px]">
                       <div><div className="uppercase tracking-wide text-slate-500">Destination</div><div className="mt-1 break-all font-mono text-white">{actionReadiness.destination_wallet || 'UNKNOWN'}</div></div>
                       <div><div className="uppercase tracking-wide text-slate-500">Attribution</div><div className="mt-1 font-semibold text-white">{attributionLabel(actionReadiness.attribution_status)}</div><div className="mt-1 text-slate-400">{actionReadiness.attribution_entity || 'No attribution available'}</div><div className="mt-0.5 text-[9px] text-slate-500">{actionReadiness.attribution_source_reference || actionReadiness.attribution_provenance || 'Source unavailable'} · {actionReadiness.attribution_status === 'known_verified' ? 'Verified' : actionReadiness.attribution_status === 'likely_inferred' ? 'Not independently verified' : 'Unknown'}</div></div>
-                      <div><div className="uppercase tracking-wide text-slate-500">Observed movement</div><div className="mt-1 text-white">{actionReadiness.observed_amount != null ? `${actionReadiness.observed_amount} ${actionReadiness.asset || 'asset'}` : 'NOT AVAILABLE'}</div></div>
+                      <div><div className="uppercase tracking-wide text-slate-500">Observed movement</div><div className="mt-1 text-white">{actionReadiness.observed_amount != null ? `${displayAmount({ ...actionReadiness.transfer, amount: actionReadiness.observed_amount })} ${actionReadiness.asset || 'asset'}` : 'NOT AVAILABLE'}</div></div>
                       <div><div className="uppercase tracking-wide text-slate-500">Last movement</div><div className="mt-1 text-white">{actionReadiness.last_movement_at ? new Date(actionReadiness.last_movement_at).toLocaleString() : 'NOT AVAILABLE'}</div></div>
                     </div>
                   </section>
@@ -1332,7 +1343,8 @@ function InvestigateContent() {
               </div>
               <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 space-y-1.5">
                 <div className="text-[10px] text-blue-300 font-mono break-all">{selectedTransaction.hash}</div>
-                <div className="text-xs text-white font-mono">{selectedTransaction.amount.toFixed(4)} {selectedTransaction.asset}</div>
+                <div className="text-xs text-white font-mono">{displayAmount(selectedTransaction)} {selectedTransaction.asset}</div>
+                <div className="text-[10px] break-all text-slate-400">Event: {selectedTransaction.transfer_id || 'Legacy event'} | Base units: {selectedTransaction.amount_base_units ?? 'Unavailable'} | Decimals: {selectedTransaction.token_decimals ?? 'Unavailable'}</div>
                 <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2 border-t border-blue-500/10 pt-2">
                   <div className="min-w-0">
                     <div className="text-[9px] uppercase tracking-widest text-slate-500">Source</div>
@@ -1645,7 +1657,7 @@ function InvestigateContent() {
                     key={t.id || t.hash || i}
                     role="button"
                     tabIndex={0}
-                    aria-pressed={selectedTransaction?.hash === t.hash}
+                    aria-pressed={selectedTransaction?.transfer_id === t.transfer_id && selectedTransaction?.id === t.id}
                     aria-label={`Select transaction ${t.hash}`}
                     onClick={() => { setSelectedTransaction(t); setActiveTab('transactions'); }}
                     onKeyDown={(event) => {
@@ -1656,7 +1668,7 @@ function InvestigateContent() {
                       }
                     }}
                     className={`bg-[var(--ct-surface)] border rounded-lg p-2.5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ct-primary)]
-                      ${selectedTransaction?.hash === t.hash ? 'border-[#8aa9a9]' : 'border-[var(--ct-outline-variant)] hover:border-[#8aa9a9]'}`}
+                      ${selectedTransaction?.transfer_id === t.transfer_id && selectedTransaction?.id === t.id ? 'border-[#8aa9a9]' : 'border-[var(--ct-outline-variant)] hover:border-[#8aa9a9]'}`}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="min-w-0 break-all font-mono text-[10px] text-blue-400">TX {t.hash?.slice(0, 20)}...</span>
@@ -1677,7 +1689,7 @@ function InvestigateContent() {
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[var(--ct-outline-variant)] pt-2">
-                      <span className="text-xs font-semibold text-white font-mono">{t.amount?.toFixed(4)} {t.asset}</span>
+                      <span className="text-xs font-semibold text-white font-mono">{displayAmount(t)} {t.asset}</span>
                       <span className="text-[10px] text-slate-500">
                         {t.timestamp ? new Date(t.timestamp).toLocaleString() : 'Timestamp unavailable'}
                         {t.source ? ` · ${t.source}` : ''}

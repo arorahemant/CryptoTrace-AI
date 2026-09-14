@@ -277,6 +277,7 @@ class Transaction(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     case_id = Column(UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
+    transfer_id = Column(String(1024), nullable=True)
     hash = Column(String(255), nullable=False)
     blockchain = Column(Enum(Blockchain), nullable=False)
     block_number = Column(BigInteger, nullable=True)
@@ -298,6 +299,7 @@ class Transaction(Base):
     case = relationship("Case", back_populates="transactions")
 
     __table_args__ = (
+        UniqueConstraint("case_id", "transfer_id", name="uq_case_transfer_event"),
         Index("ix_transactions_case", "case_id"),
         Index("ix_transactions_from", "from_address"),
         Index("ix_transactions_to", "to_address"),
@@ -322,6 +324,7 @@ class FundFlow(Base):
     timestamp = Column(DateTime(timezone=True), nullable=False)
     transaction_hash = Column(String(255), nullable=False)
     is_primary_path = Column(Boolean, default=False)
+    metadata_ = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     case = relationship("Case", back_populates="fund_flows")
@@ -535,6 +538,7 @@ class AssetActionRequest(Base):
     attribution_reasoning = Column(Text, nullable=True)
     supporting_reason = Column(Text, nullable=True)
     request_fingerprint = Column(String(64), nullable=False, unique=True)
+    metadata_ = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

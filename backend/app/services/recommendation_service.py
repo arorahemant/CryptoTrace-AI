@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.asset_actions import _case_context
 from app.services.attribution_service import normalize_attribution
+from app.services.destination_service import destination_context
+from app.core.transfers import record_fields
 from app.models.models import (
     AssetActionRequest,
     AssetActionType,
@@ -88,16 +90,17 @@ async def build_recommendations(db: AsyncSession, case: Case) -> list[dict]:
     requests = (await db.scalars(select(AssetActionRequest).where(AssetActionRequest.case_id == case.id))).all()
 
     recommendations: list[dict] = []
-    destination = next((wallet for wallet in wallets if wallet.is_destination), None)
-    intermediary = max(
+    selection = await destination_context(db, case)
+    destination = next((wallet for wallet in wallets if selection["selected"] and wallet.address == selection["selected"]["address"]), None)
+    intermediary = min(
         (wallet for wallet in wallets if wallet.is_intermediary),
-        key=lambda wallet: (wallet.total_received or 0, wallet.address),
+        key=lambda wallet: (wallet.hop_distance or 0, wallet.address),
         default=None,
     )
     if intermediary and (intermediary.total_received or 0) > 0:
         supporting_txs = sorted(
             (tx for tx in transactions if tx.to_address == intermediary.address),
-            key=lambda tx: (-tx.amount, tx.timestamp, tx.hash),
+            key=lambda tx: (tx.timestamp, tx.hash, str(tx.id)),
         )
         tx_hashes = [tx.hash for tx in supporting_txs[:1]]
         linked = _evidence_for(evidence, transaction_hashes=set(tx_hashes), wallet=intermediary.address)
@@ -106,14 +109,14 @@ async def build_recommendations(db: AsyncSession, case: Case) -> list[dict]:
             recommendations.append(_recommendation(
                 case=case,
                 kind="review_highest_value_intermediary",
-                title="Review highest-value intermediary",
+                title="Review intermediary transfer",
                 action="Review intermediary wallet",
-                reason=f"{intermediary.address} received the highest observed intermediary transfer of {amount:g} {supporting_txs[0].asset} in the traced case.",
+                reason=f"{intermediary.address} received a recorded transfer of {record_fields(supporting_txs[0]).get('amount_exact') or str(amount)} {supporting_txs[0].asset} in the traced case.",
                 priority="high",
                 evidence=linked,
                 transaction_hashes=tx_hashes,
                 target_wallet=intermediary.address,
-                source="wallet.total_received + transaction.amount + linked evidence",
+                source="nearest intermediary + chronological transfer + linked evidence",
             ))
 
     strongest = max(

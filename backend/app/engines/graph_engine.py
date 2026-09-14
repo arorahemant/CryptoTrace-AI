@@ -6,6 +6,9 @@ for frontend visualization with React Flow.
 import logging
 from typing import List, Dict, Any, Optional
 import networkx as nx
+from collections import deque
+from app.core.transfers import transfer_fields
+from app.services.destination_service import classify_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -17,15 +20,15 @@ class GraphEngine:
     """
 
     def __init__(self):
-        self.graph: Optional[nx.DiGraph] = None
+        self.graph: Optional[nx.MultiDiGraph] = None
 
     def build_graph(
         self,
         transactions: List[Dict[str, Any]],
         wallets: Dict[str, Dict[str, Any]],
-    ) -> nx.DiGraph:
+    ) -> nx.MultiDiGraph:
         """Build a directed graph from transactions and wallet metadata."""
-        G = nx.DiGraph()
+        G = nx.MultiDiGraph()
 
         # Add wallet nodes
         for address, meta in wallets.items():
@@ -40,10 +43,14 @@ class GraphEngine:
                 total_received=meta.get("total_received", 0),
                 total_sent=meta.get("total_sent", 0),
                 transaction_count=meta.get("transaction_count", 0),
+                endpoint_kind=meta.get("endpoint_kind", "not_expanded"),
+                expansion_state=meta.get("expansion_state", "legacy_unknown"),
+                received_by_asset=meta.get("received_by_asset", []),
+                sent_by_asset=meta.get("sent_by_asset", []),
             )
 
         # Add transaction edges
-        for tx in transactions:
+        for index, tx in enumerate(transactions):
             from_addr = tx["from_address"]
             to_addr = tx["to_address"]
 
@@ -56,9 +63,11 @@ class GraphEngine:
             G.add_edge(
                 from_addr,
                 to_addr,
+                key=tx.get("transfer_id", f"legacy:{index}:{tx.get('hash', '')}"),
+                **transfer_fields(tx),
                 hash=tx.get("hash", ""),
                 amount=tx.get("amount", 0),
-                asset=tx.get("asset", "ETH"),
+                asset=tx.get("asset", ""),
                 timestamp=tx.get("timestamp"),
                 is_suspicious=tx.get("is_suspicious", False),
                 hop_number=tx.get("hop_number", 0),
@@ -67,43 +76,30 @@ class GraphEngine:
         self.graph = G
         return G
 
-    def get_primary_path(self, source: str) -> List[str]:
-        """
-        Find the primary money trail — the path with the highest total amount
-        from the source wallet to the furthest destination.
+    def get_primary_path(self, source: str, destination: Optional[str] = None, max_hops: int = 10) -> List[str]:
+        """Shortest directed route, lexicographic tie-break, O(V+E), hop bounded.
+
+        This ranks structural review routes, not recovered/attributable value.
+        It does not infer temporal continuity or ownership of fungible funds.
         """
         if not self.graph or source not in self.graph:
             return [source]
-
-        # Find all leaf nodes (destinations)
-        destinations = [
-            n for n in self.graph.nodes
-            if self.graph.out_degree(n) == 0 and n != source
-        ]
-
-        if not destinations:
-            return [source]
-
-        best_path = [source]
-        best_score = 0
-
-        for dest in destinations:
-            try:
-                paths = list(nx.all_simple_paths(self.graph, source, dest, cutoff=10))
-                for path in paths:
-                    # Score = total amount along path
-                    score = sum(
-                        self.graph[path[i]][path[i + 1]].get("amount", 0)
-                        for i in range(len(path) - 1)
-                        if self.graph.has_edge(path[i], path[i + 1])
-                    )
-                    if score > best_score:
-                        best_score = score
-                        best_path = path
-            except nx.NetworkXNoPath:
+        if destination is None:
+            candidates = classify_candidates(dict(self.graph.nodes(data=True)), {})
+            destination = candidates[0]["address"] if candidates else None
+        queue = deque([[source]])
+        seen = {source}
+        while queue:
+            path = queue.popleft()
+            if path[-1] == destination:
+                return path
+            if len(path) - 1 >= max_hops:
                 continue
-
-        return best_path
+            for node in sorted(self.graph.successors(path[-1])):
+                if node not in seen:
+                    seen.add(node)
+                    queue.append(path + [node])
+        return [source]
 
     def get_intermediaries(self) -> List[Dict[str, Any]]:
         """
@@ -178,6 +174,10 @@ class GraphEngine:
 
             nodes.append({
                 "id": node_id,
+                "endpoint_kind": data.get("endpoint_kind", "not_expanded"),
+                "expansion_state": data.get("expansion_state", "legacy_unknown"),
+                "received_by_asset": data.get("received_by_asset", []),
+                "sent_by_asset": data.get("sent_by_asset", []),
                 "address": node_id,
                 "label": data.get("label", node_id[:10] + "..."),
                 "is_reported": data.get("is_reported", False),
@@ -204,16 +204,16 @@ class GraphEngine:
                 "vasp_verified_at": vasp.get("verified_at", None),
             })
 
-        for u, v, data in self.graph.edges(data=True):
-            edge_id = f"{u}-{v}-{data.get('hash', '')[:8]}"
+        for u, v, edge_id, data in self.graph.edges(keys=True, data=True):
             ts = data.get("timestamp")
             edges.append({
                 "id": edge_id,
+                **transfer_fields(data),
                 "source": u,
                 "target": v,
                 "hash": data.get("hash", ""),
                 "amount": data.get("amount", 0),
-                "asset": data.get("asset", "ETH"),
+                "asset": data.get("asset", ""),
                 "timestamp": ts.isoformat() if ts else None,
                 "is_suspicious": data.get("is_suspicious", False),
                 "hop_number": data.get("hop_number", 0),

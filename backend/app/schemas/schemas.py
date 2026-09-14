@@ -239,7 +239,19 @@ class WalletResponse(BaseModel):
 
 # ─── Transaction (Canonical) ──────────────────────────────────────────────────
 
-class TransactionResponse(BaseModel):
+class ExactTransferFields(BaseModel):
+    transfer_id: Optional[str] = None
+    chain_id: Optional[str] = None
+    event_index: Optional[str] = None
+    asset_id: Optional[str] = None
+    amount_base_units: Optional[str] = None
+    token_decimals: Optional[int] = None
+    amount_exact: Optional[str] = None
+    amount_precision: Literal["exact", "legacy_approximate"] = "legacy_approximate"
+    run_id: Optional[str] = None
+
+
+class TransactionResponse(ExactTransferFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -260,6 +272,7 @@ class TransactionResponse(BaseModel):
 
 
 class EvidenceCreate(BaseModel):
+    transfer_id: Optional[str] = Field(default=None, max_length=1024)
     """Evidence captured by an investigator from an observed case artifact."""
     evidence_type: str = Field(default="transaction", min_length=3, max_length=100)
     title: str = Field(..., min_length=3, max_length=255)
@@ -284,6 +297,9 @@ class AssetActionStatusUpdate(BaseModel):
 
 
 class AssetActionReadiness(BaseModel):
+    destination: Optional[dict] = None
+    transfer: Optional[ExactTransferFields] = None
+    run_id: Optional[str] = None
     capability: CapabilityState
     case_id: UUID
     ready: bool
@@ -308,6 +324,9 @@ class AssetActionReadiness(BaseModel):
 
 
 class AssetActionRequestResponse(BaseModel):
+    transfer: Optional[ExactTransferFields] = None
+    destination: Optional[dict] = None
+    run_id: Optional[str] = None
     external_action_verified: bool = False
     capability: CapabilityState
     id: UUID
@@ -510,7 +529,7 @@ class GraphResponse(BaseModel):
 
 # ─── Fund Flow ─────────────────────────────────────────────────────────────────
 
-class FundFlowStep(BaseModel):
+class FundFlowStep(ExactTransferFields):
     hop: int
     from_address: str
     to_address: str
@@ -648,7 +667,7 @@ class TimelineResponse(BaseModel):
 
 # ─── Replay ───────────────────────────────────────────────────────────────────
 
-class ReplayEvent(BaseModel):
+class ReplayEvent(ExactTransferFields):
     event_id: UUID
     step: int
     event_type: str
@@ -662,7 +681,15 @@ class ReplayEvent(BaseModel):
     transaction_hash: Optional[str]
     highlight_nodes: List[str] = Field(default_factory=list)
     highlight_edges: List[str] = Field(default_factory=list)
-    cumulative_amount: float = 0
+    cumulative_amount: Optional[float] = None
+    transfer_id: Optional[str] = None
+    run_id: Optional[str] = None
+    amount_exact: Optional[str] = None
+    amount_base_units: Optional[str] = None
+    token_decimals: Optional[int] = None
+    asset_id: Optional[str] = None
+    amount_precision: str = "legacy_approximate"
+    transfer_volume_by_asset: List[dict] = Field(default_factory=list)
 
 
 class ReplayResponse(BaseModel):

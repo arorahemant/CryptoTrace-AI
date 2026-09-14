@@ -1,4 +1,6 @@
 export interface CapabilityState {
+  run_id?: string | null;
+  model_version?: number | null;
   data_origin: 'none' | 'demo' | 'observed';
   provider_state: 'available' | 'not_connected';
   processing_state: 'not_started' | 'running' | 'completed' | 'failed';

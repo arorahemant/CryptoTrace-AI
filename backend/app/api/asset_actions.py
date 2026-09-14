@@ -21,6 +21,8 @@ from app.schemas.schemas import (
     AssetActionStatusSchema, AssetActionStatusUpdate,
 )
 from app.services.attribution_service import normalize_attribution
+from app.services.destination_service import destination_context
+from app.core.transfers import record_fields
 
 router = APIRouter(prefix="/cases", tags=["Asset Action Readiness"])
 
@@ -44,12 +46,9 @@ def _now() -> datetime:
 
 
 async def _case_context(db: AsyncSession, case: Case) -> dict:
-    wallet_result = await db.execute(
-        select(Wallet)
-        .where(Wallet.case_id == case.id, Wallet.is_destination.is_(True))
-        .order_by(Wallet.total_received.desc(), Wallet.address)
-    )
-    destination = wallet_result.scalars().first()
+    selection = await destination_context(db, case)
+    selected = selection["selected"]
+    destination = await db.scalar(select(Wallet).where(Wallet.case_id == case.id, Wallet.address == selected["address"])) if selected else None
     transactions = []
     attribution = None
     findings = []
@@ -61,7 +60,7 @@ async def _case_context(db: AsyncSession, case: Case) -> dict:
                 Transaction.case_id == case.id,
                 Transaction.to_address == destination.address,
             )
-            .order_by(Transaction.timestamp.desc())
+            .order_by(Transaction.timestamp.desc(), Transaction.hash, Transaction.id)
         )
         transactions = tx_result.scalars().all()
         attribution = await db.scalar(
@@ -96,7 +95,7 @@ async def _case_context(db: AsyncSession, case: Case) -> dict:
     normalized_attribution = normalize_attribution(attribution) if attribution else normalize_attribution({})
     has_attribution = normalized_attribution["attribution_status"] != "unknown"
     checks = [
-        {"key": "destination_identified", "label": "Destination identified", "complete": destination is not None},
+        {"key": "destination_identified", "label": "Destination identified", "complete": bool(selected and selected["kind"] != "not_expanded")},
         {"key": "supporting_transaction", "label": "Supporting transaction identified", "complete": latest is not None},
         {"key": "supporting_finding", "label": "Supporting finding exists", "complete": supporting_finding is not None},
         {"key": "evidence_available", "label": "Evidence available", "complete": bool(relevant_evidence)},
@@ -106,6 +105,9 @@ async def _case_context(db: AsyncSession, case: Case) -> dict:
     return {
         "capability": capability_payload(case),
         "case_id": case.id,
+        "destination": selected,
+        "transfer": record_fields(latest) if latest else None,
+        "run_id": capability_payload(case)["run_id"],
         "ready": all(item["complete"] for item in checks),
         "destination_wallet": destination.address if destination else None,
         "asset": latest.asset if latest else None,
@@ -134,6 +136,9 @@ async def _serialize(request: AssetActionRequest, db: AsyncSession) -> dict:
     return {
         "capability": capability_payload(case),
         "external_action_verified": False,
+        "transfer": (request.metadata_ or {}).get("transfer"),
+        "destination": (request.metadata_ or {}).get("destination"),
+        "run_id": (request.metadata_ or {}).get("run_id"),
         "id": request.id,
         "case_id": request.case_id,
         "actor_id": request.actor_id,
@@ -221,6 +226,8 @@ async def create_action_request(
         raise HTTPException(status_code=422, detail="All finding references must belong to this case")
 
     context = await _case_context(db, case)
+    if not context["destination"] or target.address != context["destination"]["address"]:
+        raise HTTPException(status_code=422, detail="Target must match the shared destination candidate")
     fingerprint_data = {
         "case_id": str(case.id),
         "target_wallet": target.address,
@@ -252,6 +259,7 @@ async def create_action_request(
         attribution_reasoning=context["attribution_reasoning"],
         supporting_reason=context["supporting_reason"],
         request_fingerprint=fingerprint,
+        metadata_={key: context[key] for key in ("transfer", "destination", "run_id")},
     )
     db.add(item)
     await db.flush()
