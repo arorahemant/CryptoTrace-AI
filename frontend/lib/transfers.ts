@@ -1,4 +1,10 @@
 export interface ExactTransfer {
+  block_number?: number | null;
+  block_hash?: string | null;
+  log_index?: number | null;
+  transaction_status?: string | null;
+  token_contract?: string | null;
+  provenance?: Record<string, unknown> | null;
   transfer_id?: string;
   run_id?: string;
   chain_id?: string;

@@ -1,10 +1,15 @@
 'use client';
 
-import { Fragment, Suspense, useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import './workspace.css';
+
+import { Fragment, Suspense, useCallback, useMemo, useState, useEffect, useRef, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api, { ApiError } from '@/lib/api';
-import { displayAmount, displayTotals, type ExactTransfer, type AssetTotal, type DestinationCandidate } from '@/lib/transfers';
-import { CapabilityNotice } from '@/components/CapabilityNotice';
+import { displayAmount, type ExactTransfer, type AssetTotal, type DestinationCandidate } from '@/lib/transfers';
+import { CoverageStrip } from '@/components/investigation/CoverageStrip';
+import { TrailWorkspace } from '@/components/investigation/TrailWorkspace';
+import { WalletInspector, TransferInspector } from '@/components/investigation/RecordInspector';
+import { shortAddress, type TrailSelection } from '@/lib/investigation';
 import { capabilityLabel, hasAnalysis, type CapabilityState } from '@/lib/capabilities';
 import { ReplayBar } from '@/components/investigation/ReplayBar';
 import { SafeMarkdown } from '@/components/investigation/SafeMarkdown';
@@ -14,14 +19,9 @@ import {
   Loader2,
   Bookmark, ArrowRight, ClipboardList, Send, XCircle
 } from 'lucide-react';
-import ReactFlow, {
-  Background, Controls, MiniMap,
-  Node, Edge, MarkerType, useNodesState, useEdgesState,
-  Position, ReactFlowProvider,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+import { ReactFlowProvider } from 'reactflow';
 
-// ─── Types ────────────────────────────────────────────────────
+// ─── Types// ─── Types ────────────────────────────────────────────────────
 interface GraphNodeData {
   endpoint_kind?: string;
   expansion_state?: string;
@@ -66,7 +66,7 @@ interface GraphEdgeData extends ExactTransfer {
   hop_number?: number;
 }
 
-interface GraphResponse { destination?: DestinationCandidate | null; nodes: GraphNodeData[]; edges: GraphEdgeData[]; primary_path: string[]; }
+interface GraphResponse { run_id?: string; destination?: DestinationCandidate | null; nodes: GraphNodeData[]; edges: GraphEdgeData[]; primary_path: string[]; }
 interface FindingData {
   id?: string;
   pattern_type?: string;
@@ -79,7 +79,7 @@ interface FindingData {
   supporting_transaction_ids?: string[];
   created_at?: string;
 }
-interface EvidenceData { id: string; evidence_type?: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; finding_id?: string; source?: string; created_at?: string; is_bookmarked?: boolean; }
+interface EvidenceData { transfer_id?: string; id: string; evidence_type?: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; finding_id?: string; source?: string; created_at?: string; is_bookmarked?: boolean; }
 interface ActionReadiness { transfer?: ExactTransfer; destination?: DestinationCandidate | null; case_id: string; ready: boolean; destination_wallet?: string | null; asset?: string | null; observed_amount?: number | null; last_movement_at?: string | null; attribution_status: string; attribution_confidence: string; attribution_entity?: string | null; attribution_provenance?: string; attribution_source_reference?: string | null; attribution_reasoning?: string | null; attribution_evidence_ids?: string[]; attribution_transaction_hashes?: string[]; supporting_transaction_hash?: string | null; supporting_finding_id?: string | null; evidence_count: number; evidence_ids: string[]; finding_ids: string[]; checks: Array<{ key: string; label: string; complete: boolean }>; }
 interface ActionRequest { id: string; case_id: string; actor_id: string; target_wallet: string; action_type: string; status: string; evidence_ids: string[]; finding_ids: string[]; observed_asset?: string | null; observed_amount?: number | null; last_movement_at?: string | null; attribution_status: string; attribution_confidence: string; attribution_entity?: string | null; attribution_provenance?: string; attribution_source_reference?: string | null; attribution_reasoning?: string | null; supporting_reason?: string | null; created_at: string; updated_at: string; }
 interface Recommendation { recommendation_id: string; case_id: string; type: string; title: string; action: string; factual_reason: string; priority: 'high' | 'medium' | 'low'; evidence_ids: string[]; transaction_hashes: string[]; finding_ids: string[]; target_wallet?: string | null; deterministic_source: string; created_at: string; }
@@ -156,7 +156,7 @@ function getRiskBadge(category: string | null): { bg: string; text: string } {
     medium: { bg: 'bg-amber-500/10 border-amber-500/30', text: 'text-amber-400' },
     low: { bg: 'bg-green-500/10 border-green-500/30', text: 'text-green-400' },
   };
-  return map[category || 'low'] || map.low;
+  return map[category || 'unassessed'] || { bg: 'bg-white border-slate-300', text: 'text-slate-500' };
 }
 
 function attributionLabel(status?: string | null): string {
@@ -174,39 +174,20 @@ function getStrongestFinding(findings: FindingData[]): FindingData | null {
   })[0] || null;
 }
 
-function buildInvestigationNarrative(values: {
-  walletCount: number;
-  transactionCount: number;
-  intermediaryCount: number;
-  destinationCount: number;
-  maximumHop: number;
-  strongestFinding: FindingData | null;
-}): string {
-  const {
-    walletCount, transactionCount, intermediaryCount, destinationCount,
-    maximumHop, strongestFinding,
-  } = values;
-  const parts = [
-    `Analysis traced ${transactionCount} transaction${transactionCount === 1 ? '' : 's'} across ${walletCount} wallet${walletCount === 1 ? '' : 's'}`,
-    maximumHop > 0 ? `through ${maximumHop} hop${maximumHop === 1 ? '' : 's'}` : '',
-    `and identified ${intermediaryCount} intermediary wallet${intermediaryCount === 1 ? '' : 's'}`,
-    destinationCount > 0 ? `with ${destinationCount} observed destination${destinationCount === 1 ? '' : 's'}` : '',
-  ].filter(Boolean);
-  const findingSentence = strongestFinding
-    ? `The strongest detected pattern is “${strongestFinding.pattern_name}”.`
-    : 'No suspicious pattern finding is currently recorded.';
-  return `${parts.join(', ')}. ${findingSentence}`;
-}
-
-// ─── Main Page ────────────────────────────────────────────────
+// ─── Main Page// ─── Main Page ────────────────────────────────────────────────
 export default function InvestigatePage() {
   return (
     <Suspense fallback={<main id="main-content" className="ct-page-shell flex min-h-screen items-center justify-center">Loading investigation…</main>}>
       <ReactFlowProvider>
-        <InvestigateContent />
+        <CaseRoute />
       </ReactFlowProvider>
     </Suspense>
   );
+}
+
+function CaseRoute() {
+  const params = useSearchParams();
+  return <InvestigateContent key={params.get('caseId') || ''} />;
 }
 
 function InvestigateContent() {
@@ -225,14 +206,15 @@ function InvestigateContent() {
   const [selectedNode, setSelectedNode] = useState<GraphNodeData | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionData | null>(null);
   const [showMoneyTrail, setShowMoneyTrail] = useState(false);
-  const [graphSearch, setGraphSearch] = useState('');
-  const [graphSearchMessage, setGraphSearchMessage] = useState('');
+
+  const [selection, setSelection] = useState<TrailSelection | null>(null);
+  const [selectedFinding, setSelectedFinding] = useState<FindingData | null>(null);
+  const [recordFilter, setRecordFilter] = useState('');
+  const [focusVersion, setFocusVersion] = useState(0);
+  const attemptVersion = useRef(0);
 
   // Graph
-  const [nodes, setNodes, onNodesChange] = useNodesState<GraphNodeData>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdgeData>([]);
-  const baseNodeStyles = useRef<Record<string, CSSProperties>>({});
-  const baseEdgeStyles = useRef<Record<string, CSSProperties>>({});
+  const nodes = useMemo(() => (investigation?.graph.nodes || []).map(data => ({ id: data.id || data.address, data })), [investigation?.graph]);
   const graphNodeData = useRef<Record<string, GraphNodeData>>({});
 
   // Panels
@@ -401,10 +383,17 @@ function InvestigateContent() {
       setActionError('Enter a valid historical start block and an optional end block at or after it.');
       return;
     }
+    if (investigating) return;
+    attemptVersion.current += 1;
     setInvestigating(true);
     setActionError('');
     if (ethereum) {
-      setNodes([]); setEdges([]); setTransactions([]); setFindings([]); setEvidence([]);
+      setSelection(null); setSelectedFinding(null); setSelectedNode(null); setSelectedTransaction(null);
+      setSelectedEvidence(null); setWhyData(null); setAiMessages([]); setAiLoading(false);
+      setReplayEvents([]); setReplayStep(-1); setReplaying(false); setRecordFilter('');
+      setActiveTab('overview'); setEvidenceMessage(''); setActionMessage('');
+      graphNodeData.current = {};
+      setTransactions([]); setFindings([]); setEvidence([]);
       setReport(null); setInvestigation(null); setTimeline([]);
       setActionReadiness(null); setActionRequests([]); setRecommendations([]);
     }
@@ -438,103 +427,17 @@ function InvestigateContent() {
 
   // ─── Build Graph Visualization ────────────────────────────
   function buildGraphVisualization(graphData: GraphResponse) {
-    const primaryPath = graphData.primary_path || [];
-    const pathSet = new Set(primaryPath);
-
-    // Layout: arrange by hop distance in columns
-    const hopGroups: Record<number, GraphNodeData[]> = {};
-    graphData.nodes.forEach((n: GraphNodeData) => {
-      const hop = n.hop_distance || 0;
-      if (!hopGroups[hop]) hopGroups[hop] = [];
-      hopGroups[hop].push(n);
-    });
-
-    const flowNodes: Node<GraphNodeData>[] = graphData.nodes.map((n: GraphNodeData) => {
-      const hop = n.hop_distance || 0;
-      const groupIndex = hopGroups[hop]?.indexOf(n) || 0;
-      const groupSize = hopGroups[hop]?.length || 1;
-
-      const onPrimary = pathSet.has(n.address);
-      const color = getNodeColor(n);
-
-      return {
-        id: n.id || n.address,
-        position: {
-          x: hop * 260 + 80,
-          y: (groupIndex - (groupSize - 1) / 2) * 140 + 300,
-        },
-        data: {
-          label: (
-            <div className="text-center">
-              <div className="text-[10px] font-mono text-white/80 mb-0.5">
-                {n.label || n.address?.slice(0, 14) + '...'}
-              </div>
-              <div className="text-[9px] text-white/50 font-mono">
-                {n.address?.slice(0, 10)}...
-              </div>
-              {n.vasp_name && (
-                <div className="text-[9px] text-purple-300 mt-0.5 font-medium">
-                  {n.vasp_name}
-                </div>
-              )}
-              {n.is_reported && <div className="text-[8px] text-red-300 mt-0.5">⚠ REPORTED</div>}
-              {n.endpoint_kind && <div className="text-[8px] text-slate-400 mt-0.5">{n.endpoint_kind.replaceAll('_', ' ').toUpperCase()}</div>}
-            </div>
-          ),
-          ...n,
-        },
-        style: {
-          background: `${color}20`,
-          border: `2px solid ${color}`,
-          borderRadius: '4px',
-          padding: '10px 14px',
-          minWidth: '150px',
-          boxShadow: onPrimary ? '0 2px 4px rgba(26, 28, 25, 0.12)' : 'none',
-        },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-      };
-    });
-
-    const flowEdges: Edge<GraphEdgeData>[] = graphData.edges.map((e: GraphEdgeData) => {
-      const onPrimary = pathSet.has(e.source) && pathSet.has(e.target);
-      return {
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        data: e,
-        label: `${displayAmount(e)} ${e.asset || ''}`,
-        labelStyle: { fill: '#526168', fontSize: 10, fontFamily: 'monospace' },
-        labelBgStyle: { fill: '#fafaf5', fillOpacity: 0.95 },
-        style: {
-          stroke: onPrimary ? '#124343' : '#c0c8c7',
-          strokeWidth: onPrimary ? 2.5 : 1.5,
-        },
-        animated: onPrimary,
-        markerEnd: { type: MarkerType.ArrowClosed, color: onPrimary ? '#124343' : '#c0c8c7' },
-      };
-    });
-
-    baseNodeStyles.current = Object.fromEntries(
-      flowNodes.map((node) => [node.id, { ...(node.style || {}) }]),
-    );
-    baseEdgeStyles.current = Object.fromEntries(
-      flowEdges.map((edge) => [edge.id, { ...(edge.style || {}) }]),
-    );
-    graphNodeData.current = Object.fromEntries(
-      graphData.nodes.map((node) => [node.id || node.address, node]),
-    );
-    setNodes(flowNodes);
-    setEdges(flowEdges);
+    graphNodeData.current = Object.fromEntries(graphData.nodes.map(node => [node.address, node]));
   }
 
-  // ─── WHY? ─────────────────────────────────────────────────
+  // ─── WHY?  // ─── WHY? ─────────────────────────────────────────────────
   const loadWhy = async (address: string) => {
+    const version = attemptVersion.current;
     setLoadingWhy(true);
     setActionError('');
     try {
       const data = await api.getWhyExplanation(caseId, address);
-      setWhyData(data);
+      if (version === attemptVersion.current) setWhyData(data);
     } catch (err) {
       console.error('Failed to load WHY', err);
       setActionError(err instanceof Error ? err.message : 'Unable to load the WHY explanation.');
@@ -546,7 +449,9 @@ function InvestigateContent() {
   // ─── Replay ───────────────────────────────────────────────
   const loadReplay = async (): Promise<ReplayEvent[]> => {
     if (replayEvents.length > 0) return replayEvents;
+    const version = attemptVersion.current;
     const data = await api.getReplay(caseId);
+    if (version !== attemptVersion.current) return [];
     const events = data.events || [];
     setReplayEvents(events);
     return events;
@@ -589,50 +494,9 @@ function InvestigateContent() {
     return () => { if (replayTimer.current) clearTimeout(replayTimer.current); };
   }, [replaying, replayStep, replayEvents.length]);
 
-  // Replay and money-trail styling are projections of the same backend graph.
-  // Rebuild from the baseline styles so the previous replay step cannot leave
-  // stale node or edge highlights behind.
   useEffect(() => {
     const event = replayStep >= 0 ? replayEvents[replayStep] : undefined;
-    const highlightNodes = new Set(event?.highlight_nodes || []);
-    const highlightEdges = new Set(event?.highlight_edges || []);
-    const primaryPath = new Set(investigation?.graph?.primary_path || []);
-
-    setNodes(nds => nds.map(n => ({
-      ...n,
-      style: {
-        ...baseNodeStyles.current[n.id],
-        opacity: showMoneyTrail && !primaryPath.has(n.id) ? 0.45 : 1,
-        border: highlightNodes.has(n.id) ? '2px solid #124343' : baseNodeStyles.current[n.id]?.border,
-        boxShadow: highlightNodes.has(n.id)
-          ? '0 2px 6px rgba(18, 67, 67, 0.28)'
-          : baseNodeStyles.current[n.id]?.boxShadow,
-      },
-    })));
-
-    setEdges(currentEdges => currentEdges.map(edge => {
-      const edgeData = edge.data;
-      const onPrimary = primaryPath.has(edge.source) && primaryPath.has(edge.target);
-      const isCurrent = Boolean(
-        highlightEdges.has(edge.id)
-        || (!event?.transfer_id && event?.transaction_hash && edgeData?.hash === event.transaction_hash),
-      );
-      return {
-        ...edge,
-        animated: showMoneyTrail ? onPrimary : isCurrent,
-        style: {
-          ...baseEdgeStyles.current[edge.id],
-          stroke: isCurrent
-            ? '#124343'
-            : showMoneyTrail
-              ? (onPrimary ? '#396666' : '#c0c8c7')
-              : (onPrimary ? '#124343' : '#c0c8c7'),
-          strokeWidth: isCurrent ? 3.5 : (showMoneyTrail && onPrimary ? 3 : (onPrimary ? 2.5 : 1.5)),
-        },
-      };
-    }));
-
-    // Keep the right-side inspector and evidence context synchronized with the
+    // Keep the right-side inspector    // Keep the right-side inspector and evidence context synchronized with the
     // event currently shown in the replay bar.
     if (event) {
       const transaction = event.transaction_hash
@@ -646,14 +510,17 @@ function InvestigateContent() {
         : undefined;
       void Promise.resolve().then(() => {
         setSelectedTransaction(transaction);
+        setSelection({ wallets: event.highlight_nodes || [], transfers: event.transfer_id ? [event.transfer_id] : event.highlight_edges || [], label: 'Replay event' });
         setSelectedEvidence(supportingEvidence);
         if (selectedReplayNode) setSelectedNode(selectedReplayNode);
       });
     }
-  }, [replayStep, replayEvents, transactions, evidence, showMoneyTrail, investigation, setNodes, setEdges]);
+  }, [replayStep, replayEvents, transactions, evidence]);
 
   // ─── AI Query ─────────────────────────────────────────────
   const askAI = async (question?: string) => {
+    if (aiLoading || investigating || !caseData?.permissions.includes('case.write') || caseData.lifecycle === 'closed') return;
+    const version = attemptVersion.current;
     const q = question || aiInput.trim();
     if (!q) return;
 
@@ -663,17 +530,18 @@ function InvestigateContent() {
 
     try {
       const data = await api.askAI(caseId, q);
-      setAiMessages(prev => [...prev, { role: 'assistant', content: data.answer }]);
+      if (version === attemptVersion.current) setAiMessages(prev => [...prev, { role: 'assistant', content: data.answer }]);
     } catch (err) {
       console.error('AI Copilot request failed', err);
-      setAiMessages(prev => [...prev, { role: 'assistant', content: 'AI Copilot is unavailable right now. Review the case evidence and try again.' }]);
+      if (version === attemptVersion.current) setAiMessages(prev => [...prev, { role: 'assistant', content: 'AI Copilot is unavailable right now. Review the case evidence and try again.' }]);
     } finally {
-      setAiLoading(false);
+      if (version === attemptVersion.current) setAiLoading(false);
     }
   };
 
   const saveTransactionEvidence = async (transaction: TransactionData) => {
-    if (!transaction?.hash || savingEvidence) return;
+    if (!transaction?.hash || savingEvidence || investigating) return;
+    const version = attemptVersion.current;
     setSavingEvidence(true);
     setEvidenceMessage('');
     try {
@@ -687,7 +555,9 @@ function InvestigateContent() {
         wallet_address: transaction.to_address,
         source: 'investigator',
       });
+      if (version !== attemptVersion.current) return;
       const refreshed = await api.getEvidence(caseId);
+      if (version !== attemptVersion.current) return;
       setEvidence(refreshed.evidence || []);
       setSelectedEvidence(saved);
       setEvidenceMessage('Evidence saved to this case.');
@@ -738,18 +608,25 @@ function InvestigateContent() {
 
   const selectEvidence = (item: EvidenceData) => {
     setSelectedEvidence(item);
-    if (item.transaction_hash) {
-      const transaction = transactions.find(candidate => candidate.hash === item.transaction_hash);
-      if (transaction) setSelectedTransaction(transaction);
+    const matches = transactions.filter(candidate => item.transfer_id ? candidate.transfer_id === item.transfer_id : candidate.hash === item.transaction_hash);
+    if (matches.length === 1) {
+      const transaction = matches[0];
+      setSelectedTransaction(transaction); setSelectedNode(null);
+      setSelection({ wallets: [transaction.from_address, transaction.to_address], transfers: [transaction.transfer_id || transaction.id || ''], label: 'Evidence transfer' });
+    } else if (item.wallet_address) {
+      setSelection({ wallets: [item.wallet_address], transfers: [], label: 'Evidence wallet' });
     }
   };
 
-  // ─── Report ───────────────────────────────────────────────
+  // ─── Report  // ─── Report ───────────────────────────────────────────────
   const generateReport = async () => {
+    if (investigating) return;
+    const version = attemptVersion.current;
     setGeneratingReport(true);
     setActionError('');
     try {
       const data = await api.generateReport(caseId);
+      if (version !== attemptVersion.current) return;
       setReport(data);
       setActiveTab('report');
     } catch (err) {
@@ -761,21 +638,26 @@ function InvestigateContent() {
   };
 
   // ─── Node Click ───────────────────────────────────────────
-  const onNodeClick = (_: React.MouseEvent, node: Node<GraphNodeData>) => {
-    setSelectedNode(node.data);
-    setActiveTab('overview');
-    void loadWhy(node.data.address);
-    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
-      window.setTimeout(() => document.querySelector('.ct-investigation-inspector')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
-    }
-  };
+  const selectTransfer = useCallback((id: string) => {
+    const transaction = transactions.find(item => item.transfer_id === id || item.id === id);
+    if (!transaction) { setActionError('This transfer record is unavailable in the current run.'); return; }
+    setSelectedTransaction(transaction); setSelectedNode(null); setSelectedFinding(null);
+    setSelection({ wallets: [transaction.from_address, transaction.to_address], transfers: [transaction.transfer_id || id], label: 'Selected transfer' });
+    setActiveTab('transactions');
+  }, [transactions]);
 
-  const onEdgeClick = (_: React.MouseEvent, edge: Edge<GraphEdgeData>) => {
-    const transaction = transactions.find(item => item.transfer_id === edge.id || (!edge.data?.transfer_id && item.hash === edge.data?.hash));
-    if (transaction) {
-      setSelectedTransaction(transaction);
-      setActiveTab('transactions');
-    }
+  const selectWallet = useCallback((address: string) => {
+    const wallet = graphNodeData.current[address];
+    if (!wallet) return;
+    setSelectedNode(wallet); setSelectedTransaction(null); setSelectedFinding(null); setWhyData(null);
+    setSelection({ wallets: [address], transfers: [], label: 'Selected wallet' });
+    setActiveTab('overview');
+  }, []);
+
+  const selectFinding = (finding: FindingData) => {
+    setSelectedFinding(finding); setSelectedNode(null); setSelectedTransaction(null);
+    setSelection({ wallets: finding.affected_wallets || [], transfers: transactions.filter(t => finding.supporting_transaction_ids?.includes(t.hash)).map(t => t.transfer_id || t.id || ''), label: finding.pattern_name });
+    setActiveTab('findings');
   };
 
   const selectTransactionByHash = (hash: string) => {
@@ -790,42 +672,10 @@ function InvestigateContent() {
       setActionError('The supporting transaction is not available in this case.');
       return;
     }
-    setSelectedTransaction(transaction);
-    setActiveTab('transactions');
+    selectTransfer(transaction.transfer_id || transaction.id || '');
   };
 
-  const selectWalletByAddress = (address: string) => {
-    const wallet = graphNodeData.current[address]
-      || nodes.find((node) => node.data.address === address)?.data;
-    if (!wallet) {
-      setActionError('The affected wallet is not available in this case.');
-      return;
-    }
-    setSelectedNode(wallet);
-    setActiveTab('overview');
-    void loadWhy(address);
-  };
-
-  const searchGraph = () => {
-    const query = graphSearch.trim().toLowerCase();
-    if (!query) return;
-
-    const match = nodes.find(node => {
-      const address = node.data.address?.toLowerCase() || '';
-      const label = typeof node.data.label === 'string' ? node.data.label.toLowerCase() : '';
-      return address.includes(query) || label.includes(query);
-    });
-
-    if (!match) {
-      setGraphSearchMessage('No matching wallet in this investigation.');
-      return;
-    }
-
-    setGraphSearchMessage('');
-    setSelectedNode(match.data);
-    setActiveTab('overview');
-    void loadWhy(match.data.address);
-  };
+  const selectWalletByAddress = (address: string) => selectWallet(address);
 
   const jumpToReplayEvent = async (timelineEvent: TimelineEvent) => {
     setActionError('');
@@ -892,21 +742,9 @@ function InvestigateContent() {
   const suspiciousTransactionCount = transactions.filter((transaction) => transaction.is_suspicious).length;
   const linkedEvidenceCount = evidence.filter((item) => item.transaction_hash || item.finding_id).length;
   const riskCategory = (investigation?.risk?.overall || caseData?.summary?.risk_level || 'PENDING').toUpperCase();
-  const intermediaryCount = nodes.filter((node) => node.data.is_intermediary).length;
-  const destinationCount = nodes.filter((node) => node.data.is_destination).length;
   const strongestFinding = getStrongestFinding(findings);
-  const originTotals: AssetTotal[] = investigation?.fund_flow_summary?.origin_outflow_by_asset || [];
   const primaryPath = investigation?.primary_path || investigation?.graph?.primary_path || [];
   const destinationNode = nodes.find((node) => node.id === investigation?.graph?.destination?.address)?.data;
-  const investigationNarrative = buildInvestigationNarrative({
-    walletCount: nodes.length,
-    transactionCount: transactions.length,
-    intermediaryCount,
-    destinationCount,
-    maximumHop: traceHopCount,
-    strongestFinding,
-  });
-
   return (
     <main id="main-content" className="ct-investigation-shell flex h-screen flex-col overflow-hidden bg-[var(--ct-surface)]">
       <h1 className="sr-only">Investigation for case {caseData.case_number}</h1>
@@ -956,56 +794,32 @@ function InvestigateContent() {
         </div>
       )}
 
-      <div className="shrink-0 px-4 py-2">
-        <CapabilityNotice capability={caseData?.capability} />
-        {caseData.blockchain === 'ethereum' && (
-          <div className="mt-2 flex flex-wrap items-end gap-3 text-xs">
-            <label>Historical start block<input aria-label="Historical start block" inputMode="numeric" value={fromBlock} onChange={e => setFromBlock(e.target.value)} className="block rounded border px-2 py-1" placeholder="Required" /></label>
-            <label>End block<input aria-label="Historical end block" inputMode="numeric" value={toBlock} onChange={e => setToBlock(e.target.value)} className="block rounded border px-2 py-1" placeholder="Latest finalized block" /></label>
-            <button type="button" onClick={runInvestigation} disabled={!canMutate || investigating || !analysisAvailable} className="ct-button-primary px-3 py-1 disabled:opacity-50">{investigating ? 'Observing?' : 'Run Ethereum observation'}</button>
-            <span>Up to 2 hops / 100 transfers. External ETH and standard ERC-20 only. No ownership or fraud confirmation.</span>
-            {caseData.capability.coverage && <span className="w-full">Run {caseData.capability.run_id}: blocks {caseData.capability.coverage.observation_boundaries?.from_block ?? 'unavailable'}?{caseData.capability.coverage.observation_boundaries?.to_block ?? 'unavailable'}; {caseData.capability.coverage.partial ? 'partial coverage' : 'queried interval exhausted'}; {caseData.capability.coverage.provider_requests ?? 0} provider requests.</span>}
-          </div>
-        )}
-        <div className="mt-1 flex items-center justify-between text-xs">
-          <span>Case: {caseData?.lifecycle === 'closed' ? 'Closed by investigator' : 'Open'}{!canMutate ? ' ? Read-only access' : ''}</span>
-          {canMutate && <button type="button" className="ct-button-secondary px-3" onClick={async () => {
+      <div className="investigation-context">
+        <CoverageStrip capability={caseData.capability} />
+        <section className="case-brief" aria-label="Case summary">
+          <div><span>Case status</span><strong>{caseData.lifecycle === 'closed' ? 'Closed' : caseData.status.replaceAll('_', ' ')}</strong><small>{!canMutate ? 'Read-only' : 'Investigator workspace'}</small></div>
+          <div><span>Network / risk</span><strong>{caseData.blockchain === 'ethereum' ? 'Ethereum Mainnet' : caseData.blockchain === 'demo' ? 'Demo Network' : caseData.blockchain}</strong><small>{riskCategory} RISK</small></div>
+          <button onClick={() => selectWallet(caseData.reported_wallet)} disabled={!hasInvestigation}><span>Reported wallet</span><strong className="font-mono" title={caseData.reported_wallet}>{shortAddress(caseData.reported_wallet)}</strong><small>Investigation origin</small></button>
+          <button onClick={() => investigation?.graph.destination && selectWallet(investigation.graph.destination.address)} disabled={!investigation?.graph.destination}><span>Destination candidate</span><strong className="font-mono" title={investigation?.graph.destination?.address}>{investigation?.graph.destination ? shortAddress(investigation.graph.destination.address) : 'Not established'}</strong><small>{destinationNode?.vasp_name ? `${destinationNode.vasp_name} · ${attributionLabel(destinationNode.vasp_attribution_status)}` : 'Attribution unknown'}</small></button>
+          <button onClick={() => setActiveTab('findings')}><span>Key findings</span><strong>{findings.length}</strong><small>{caseData.blockchain === 'ethereum' ? 'Risk interpretation unavailable' : strongestFinding?.pattern_name || 'None recorded'}</small></button>
+          <button onClick={() => setActiveTab('recommendations')}><span>Next action</span><strong>{recommendations.length ? 'Review recommendation' : 'Review coverage'}</strong><small>{recommendations[0]?.title || 'Check observation boundaries'}</small></button>
+        </section>
+        <details className="observation-controls">
+          <summary>{caseData.blockchain === 'ethereum' ? 'Observation interval & case controls' : 'Case controls'}</summary>
+          {caseData.blockchain === 'ethereum' && <div className="observation-form">
+            <label>Historical start block<input aria-label="Historical start block" inputMode="numeric" value={fromBlock} onChange={e => setFromBlock(e.target.value)} placeholder="Required" /></label>
+            <label>End block<input aria-label="Historical end block" inputMode="numeric" value={toBlock} onChange={e => setToBlock(e.target.value)} placeholder="Latest finalized" /></label>
+            <button onClick={runInvestigation} disabled={!canMutate || investigating || !analysisAvailable}>{investigating ? 'Observing…' : 'Run Ethereum observation'}</button>
+            <small>Up to 2 hops / 100 transfers. External ETH and standard ERC-20. A new attempt replaces this run.</small>
+          </div>}
+          {canMutate && <button className="case-close" onClick={async () => {
             if (!window.confirm('Close this case? Processing results do not establish recovery or external action.')) return;
             try { await api.closeCase(caseId); await loadCase(); } catch (err) { setActionError(err instanceof Error ? err.message : 'Unable to close case'); }
           }}>Close case</button>}
-        </div>
+        </details>
       </div>
-      {hasInvestigation && (
-        <section className="ct-investigation-story shrink-0 border-b border-[var(--ct-outline-variant)] bg-white px-4 py-3" aria-labelledby="case-story-heading">
-          <div className="mx-auto grid max-w-[1600px] grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-[minmax(300px,1.8fr)_repeat(6,minmax(76px,0.5fr))] xl:items-stretch">
-            <div className="col-span-2 min-w-0 border-l-[3px] border-[var(--ct-primary)] pl-3 sm:col-span-3 xl:col-span-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 id="case-story-heading" className="text-sm font-bold text-[var(--ct-ink)]">What happened</h2>
-                <span className="ct-status-chip bg-[#edf3f3] text-[var(--ct-primary)]">Analysis</span>
-                {caseData.is_demo && <span className="ct-status-chip bg-[var(--ct-warning-surface)] text-[var(--risk-medium)]">Demo data</span>}
-              </div>
-              <p className="mt-1.5 max-w-3xl text-xs leading-5 text-[var(--ct-ink-muted)]">{investigationNarrative}</p>
-              <p className="mt-1 text-[10px] text-[var(--ct-outline)]">Network / asset · {caseData.blockchain || 'UNKNOWN'} / {caseData.asset || 'UNKNOWN'} · {capabilityLabel(caseData.capability)}</p>
-              <p className="mt-1 truncate font-mono text-[10px] text-[var(--ct-outline)]" title={caseData.reported_wallet}>Reported wallet · {caseData.reported_wallet}</p>
-            </div>
-            {[
-              { label: 'Risk', value: riskCategory },
-              { label: 'Origin outflow by asset', value: displayTotals(originTotals) },
-              { label: 'Maximum hops', value: traceHopCount || '—' },
-              { label: 'Wallets', value: nodes.length },
-              { label: 'Transactions', value: transactions.length },
-              { label: 'Findings', value: findings.length },
-            ].map((metric) => (
-              <div key={metric.label} className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface-low)] px-3 py-2.5">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-ink-muted)]">{metric.label}</div>
-                <div className="mt-1 truncate text-sm font-bold capitalize text-[var(--ct-ink)]">{metric.value}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
-      {/* ─── Main Content ──────────────────────────────────── */}
+      {/* ─── Main Content      {/* ─── Main Content ──────────────────────────────────── */}
       <div className="ct-investigation-main flex flex-1 overflow-hidden">
         {/* ─── Left Panel ──────────────────────────────────── */}
         <div className="ct-investigation-nav w-56 border-r border-[var(--ct-outline-variant)] bg-white flex flex-col shrink-0 overflow-y-auto">
@@ -1056,9 +870,9 @@ function InvestigateContent() {
                 <div className="w-20 h-20 rounded-2xl bg-[var(--ct-surface-high)] border border-[var(--ct-outline-variant)] flex items-center justify-center mx-auto mb-4">
                   <Search className="w-10 h-10 text-slate-600" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Ready to investigate</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">{investigating ? 'Observing the selected interval' : caseData.capability.processing_state === 'failed' ? 'Observation attempt failed' : caseData.capability.result_state === 'empty' ? 'No records observed' : 'Ready to investigate'}</h3>
                 <p className="text-slate-400 text-sm mb-1">Wallet: <span className="font-mono text-blue-400">{caseData?.reported_wallet}</span></p>
-                <p className="text-slate-500 text-xs mb-6">{analysisAvailable ? 'Run the demonstration analysis on synthetic transactions.' : capabilityLabel(caseData?.capability)}</p>
+                <p className="text-slate-500 text-xs mb-6">{caseData.blockchain === 'demo' ? 'Run demonstration analysis on synthetic transactions.' : caseData.capability.result_state === 'empty' ? 'No matching records in this interval. This does not mean no wallet activity.' : 'Choose a historical interval in Observation controls above.'}</p>
                 <button
                   onClick={runInvestigation}
                   disabled={!canMutate || investigating || !analysisAvailable}
@@ -1073,60 +887,7 @@ function InvestigateContent() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 relative" style={{ height: '100%' }}>
-              <div className="absolute top-3 right-3 z-10 hidden sm:block rounded border border-[var(--ct-outline-variant)] bg-white/95 px-3 py-2 shadow-[var(--ct-shadow-sm)]">
-                <div className="text-[10px] uppercase tracking-widest text-slate-500 font-medium">How the money moved</div>
-                <div className="mt-1 text-[10px] text-slate-400 font-mono">{nodes.length} wallets · {edges.length} transfers</div>
-              </div>
-              <form
-                onSubmit={(event) => { event.preventDefault(); searchGraph(); }}
-                className="absolute top-3 left-3 z-10 flex items-center gap-1 rounded border border-[var(--ct-outline-variant)] bg-white/95 p-1 shadow-[var(--ct-shadow-sm)]"
-              >
-                <Search className="ml-2 h-3.5 w-3.5 text-slate-500" />
-                <input
-                  value={graphSearch}
-                  onChange={(event) => { setGraphSearch(event.target.value); setGraphSearchMessage(''); }}
-                  placeholder="Search wallet"
-                  aria-label="Search wallet in graph"
-                  className="w-36 bg-transparent px-2 py-1.5 text-[11px] text-white outline-none placeholder:text-slate-600"
-                />
-                <button type="submit" className="rounded-md bg-blue-500/15 px-2 py-1.5 text-[10px] font-medium text-blue-300 hover:bg-blue-500/25">
-                  Find
-                </button>
-              </form>
-              {graphSearchMessage && (
-                <div className="absolute left-3 top-14 z-10 rounded-md border border-[#e2a88c] bg-[var(--ct-warning-surface)]/95 px-2.5 py-1.5 text-[10px] text-[var(--risk-medium)] shadow-[var(--ct-shadow-sm)]">
-                  {graphSearchMessage}
-                </div>
-              )}
-              {investigation?.stats?.trace_status === 'partial' && (
-                <div className="absolute left-3 top-24 z-10 max-w-sm rounded-md border border-amber-500/30 bg-amber-950/80 px-3 py-2 text-[10px] text-amber-200 shadow-lg">
-                  <div className="font-bold uppercase tracking-wide">Trace incomplete</div>
-                  <div className="mt-0.5">{investigation.stats.trace_warning || 'Provider data was incomplete; results may be incomplete.'}</div>
-                </div>
-              )}
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onNodeClick={onNodeClick}
-                onEdgeClick={onEdgeClick}
-                fitView
-                fitViewOptions={{ padding: 0.3 }}
-                minZoom={0.3}
-                maxZoom={2}
-                attributionPosition="bottom-left"
-              >
-                <Background color="#dfe4e2" gap={40} size={1} />
-                <Controls position="bottom-right" />
-                <MiniMap
-                  position="bottom-left"
-                  nodeColor={(n) => getNodeColor(n.data)}
-                  maskColor="#fafaf5cc"
-                />
-              </ReactFlow>
-            </div>
+            <TrailWorkspace key={caseData.capability.run_id || caseId} graph={investigation!.graph} selection={selection} onWallet={selectWallet} onTransfer={selectTransfer} focusVersion={focusVersion} isolateRequested={showMoneyTrail} />
           )}
 
           {/* ─── Replay Bar ──────────────────────────────── */}
@@ -1144,7 +905,9 @@ function InvestigateContent() {
         </div>
 
         {/* ─── Right Panel ─────────────────────────────────── */}
-        <div className="ct-investigation-inspector w-80 border-l border-[var(--ct-outline-variant)] bg-white overflow-y-auto shrink-0">
+        <div aria-label="Investigation inspector" className="ct-investigation-inspector w-80 border-l border-[var(--ct-outline-variant)] bg-white overflow-y-auto shrink-0">
+          <div className="inspector-location"><strong>{activeTab === 'ai' ? 'Investigation Copilot' : activeTab === 'overview' ? 'Case / selected wallet' : activeTab.replaceAll('_', ' ')}</strong><span title={caseData.capability.run_id || undefined}>Run {caseData.capability.run_id?.slice(0, 8) || 'not started'}</span></div>
+          {recordFilter && ['transactions', 'evidence'].includes(activeTab) && <div className="trail-notice">Wallet: {shortAddress(recordFilter)} <button onClick={() => setRecordFilter('')}>Clear filter</button></div>}
           {replayStep >= 0 && replayEvents[replayStep] && (
             <div className="p-3 border-b border-cyan-500/20 bg-cyan-500/5">
               <div className="text-[10px] uppercase tracking-widest text-cyan-400 font-medium mb-1">Replay context</div>
@@ -1154,7 +917,7 @@ function InvestigateContent() {
               {selectedEvidence && <div className="text-[10px] text-amber-300 truncate mt-1">Evidence: {selectedEvidence.title}</div>}
             </div>
           )}
-          {activeTab === 'overview' && hasInvestigation && (
+          {activeTab === 'overview' && hasInvestigation && !selectedNode && (
             <div className="space-y-3 p-4 animate-fade-in">
               <div className="flex items-start justify-between gap-3">
                 <div><h3 className="text-sm font-bold text-white">Investigation summary</h3><p className="mt-0.5 text-[10px] text-slate-500">Decision-ready case context</p></div>
@@ -1176,7 +939,7 @@ function InvestigateContent() {
               </section>
 
               <section className="rounded-lg border border-[var(--ct-outline-variant)] bg-white p-3" aria-labelledby="money-trail-heading">
-                <div className="flex items-center justify-between gap-2"><div><div id="money-trail-heading" className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Money trail</div><div className="mt-1 text-[10px] text-slate-400">Origin to likely destination</div></div><button type="button" onClick={() => setShowMoneyTrail(true)} className="min-h-10 rounded border border-[#8aa9a9] px-2 text-[10px] font-semibold text-[var(--ct-primary)]">Focus graph</button></div>
+                <div className="flex items-center justify-between gap-2"><div><div id="money-trail-heading" className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Money trail</div><div className="mt-1 text-[10px] text-slate-400">Origin to likely destination</div></div><button type="button" onClick={() => { setShowMoneyTrail(true); setFocusVersion(v => v + 1); }} className="min-h-10 rounded border border-[#8aa9a9] px-2 text-[10px] font-semibold text-[var(--ct-primary)]">Focus graph</button></div>
                 {primaryPath.length > 0 ? (
                   <ol className="mt-2 space-y-1.5">
                     {primaryPath.slice(0, 6).map((address, index) => {
@@ -1194,6 +957,7 @@ function InvestigateContent() {
                 <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2.5"><div className="text-[9px] uppercase tracking-wide text-slate-500">Destination attribution</div><div className="mt-1 truncate text-xs font-semibold text-white">{destinationNode?.vasp_name || 'No attribution available'}</div><div className="mt-0.5 text-[9px] font-semibold text-slate-500">{attributionLabel(destinationNode?.vasp_attribution_status || destinationNode?.vasp_confidence)}</div></div>
               </section>
 
+              <section className="copilot-entry"><h3>Investigation Copilot</h3><p>Evidence-grounded explanations</p><button onClick={() => setActiveTab('ai')}>Explain the money trail →</button><button onClick={() => setActiveTab('ai')}>What should I review next? →</button></section>
               <details className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3">
                 <summary className="cursor-pointer text-[10px] font-semibold text-slate-400">Case assignment</summary>
                 <div className="mt-2 text-xs font-semibold text-white">{caseData.assignment?.display_name || 'Assignment unavailable'}</div>
@@ -1202,104 +966,20 @@ function InvestigateContent() {
             </div>
           )}
 
-          {activeTab === 'overview' && selectedNode && (
-            <div className="p-4 space-y-3 border-t border-[var(--ct-outline-variant)] animate-slide-in">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-white">Wallet Inspector</h3>
-                <button onClick={() => setSelectedNode(null)} className="text-slate-500 hover:text-white">
-                  <XCircle className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="bg-[var(--ct-surface)] rounded-lg p-3 border border-[var(--ct-outline-variant)]">
-                <div className="text-[10px] text-slate-500 mb-1">Address</div>
-                <div className="text-xs font-mono text-blue-400 break-all">{selectedNode.address}</div>
-              </div>
-              {selectedNode.label && (
-                <div className="bg-[var(--ct-surface)] rounded-lg p-3 border border-[var(--ct-outline-variant)]">
-                  <div className="text-[10px] text-slate-500 mb-1">Label</div>
-                  <div className="text-xs text-white">{selectedNode.label}</div>
-                </div>
-              )}
-              {(selectedNode.risk_category || selectedNode.risk_score != null) && (
-                <div className="bg-[var(--ct-danger-surface)] rounded-lg p-3 border border-[#e8a5a0]">
-                  <div className="text-[10px] uppercase tracking-widest text-red-300 font-medium mb-1">Risk assessment</div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-white">{selectedNode.risk_category?.toUpperCase() || 'UNASSESSED'}</span>
-                    {selectedNode.risk_score != null && <span className="text-xs text-red-300 font-mono">{selectedNode.risk_score}/100</span>}
-                  </div>
-                  {(selectedNode.risk_signals ?? []).slice(0, 3).map((signal, i) => (
-                    <div key={i} className="text-[10px] text-slate-400 mt-1">{signal.signal_name || 'Signal'}{signal.score_contribution != null ? ` (+${signal.score_contribution})` : ''}</div>
-                  ))}
-                </div>
-              )}
-              {(selectedNode.vasp_name || selectedNode.vasp_attribution_status || selectedNode.vasp_confidence) && (
-                <div className="bg-[var(--ct-surface)] rounded-lg p-3 border border-[#d9b9a5]">
-                  <div className="text-[10px] uppercase tracking-widest text-purple-300 font-medium mb-1">Attribution</div>
-                  <div className="text-[10px] font-bold text-slate-300">{attributionLabel(selectedNode.vasp_attribution_status || selectedNode.vasp_confidence)}</div>
-                  <div className="mt-1 text-xs text-white">{selectedNode.vasp_name || 'No attribution available'}</div>
-                  {selectedNode.vasp_reasoning && <p className="mt-1 text-[10px] text-slate-400"><span className="font-semibold text-slate-500">Why:</span> {selectedNode.vasp_reasoning}</p>}
-                  {(selectedNode.vasp_source_reference || selectedNode.vasp_source) && <div className="mt-1 text-[10px] text-slate-500">Source: {selectedNode.vasp_source_reference || selectedNode.vasp_source}</div>}
-                  <div className="mt-1 text-[10px] text-slate-500">{selectedNode.vasp_attribution_status === 'known_verified' ? 'Verified from an authoritative source' : selectedNode.vasp_attribution_status === 'likely_inferred' ? 'Not independently verified' : 'Supporting attribution unavailable'}</div>
-                  {selectedNode.vasp_supporting_evidence && <p className="mt-1 text-[10px] text-slate-400">{selectedNode.vasp_supporting_evidence}</p>}
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-[var(--ct-surface)] rounded-lg p-2 border border-[var(--ct-outline-variant)]">
-                  <div className="text-[10px] text-slate-500">Received</div>
-                  <div className="text-xs text-green-400 font-mono">{displayTotals(selectedNode.received_by_asset)}</div>
-                </div>
-                <div className="bg-[var(--ct-surface)] rounded-lg p-2 border border-[var(--ct-outline-variant)]">
-                  <div className="text-[10px] text-slate-500">Sent</div>
-                  <div className="text-xs text-red-400 font-mono">{displayTotals(selectedNode.sent_by_asset)}</div>
-                </div>
-              </div>
-
-              {/* WHY? Button */}
-              <button
-                onClick={() => selectedNode?.address && loadWhy(selectedNode.address)}
-                disabled={loadingWhy}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500/10 text-amber-400
-                  border border-amber-500/30 rounded-lg text-xs font-bold hover:bg-amber-500/20 transition-all"
-              >
-                {loadingWhy ? <Loader2 className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-                WHY WAS THIS FLAGGED?
-              </button>
-
-              {/* WHY? Result */}
-              {whyData && whyData.wallet_address === selectedNode.address && (
-                <div className="space-y-2 animate-fade-in">
-                  <div className="text-[10px] uppercase tracking-widest text-amber-400 font-medium">Reasons</div>
-                  {whyData.reasons?.map((r: string, i: number) => (
-                    <div key={i} className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5">
-                      <p className="text-xs text-slate-300">{r}</p>
-                    </div>
-                  ))}
-                  {(whyData.findings ?? []).length > 0 && (
-                    <>
-                      <div className="text-[10px] uppercase tracking-widest text-slate-500 font-medium mt-3">Supporting Findings</div>
-                      {(whyData.findings ?? []).map((f, i: number) => (
-                        <div key={i} className="bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg p-2.5">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border
-                              ${f.severity === 'high' || f.severity === 'critical' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
-                              {f.severity?.toUpperCase()}
-                            </span>
-                            <span className="text-[10px] text-slate-400">{f.pattern_name}</span>
-                          </div>
-                          <p className="text-[11px] text-slate-300">{f.description}</p>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  {evidence.length > 0 && (
-                    <button type="button" onClick={() => setActiveTab('evidence')} className="ct-button-primary mt-2 flex min-h-11 w-full items-center justify-center gap-2 px-3 text-xs">
-                      <Bookmark className="h-3.5 w-3.5" /> View supporting evidence
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          {activeTab === 'overview' && selectedNode && !investigating && <>
+            <WalletInspector wallet={selectedNode} network={caseData.blockchain === 'ethereum' ? 'Ethereum Mainnet' : caseData.blockchain || 'Unknown'}
+              onClose={() => { setSelectedNode(null); setSelection(null); }}
+              onTransfers={() => { setRecordFilter(selectedNode.address); setActiveTab('transactions'); }}
+              onEvidence={() => { setRecordFilter(selectedNode.address); setActiveTab('evidence'); }}
+              onWhy={() => void loadWhy(selectedNode.address)}
+              onFocus={() => { setShowMoneyTrail(true); setFocusVersion(v => v + 1); }} />
+            {loadingWhy && <p role="status" className="p-4 text-xs">Loading explanation…</p>}
+            {whyData?.wallet_address === selectedNode.address && <section className="record-inspector"><h3>Why this wallet?</h3>
+              {caseData.blockchain === 'ethereum' && <p className="trail-notice">Observed connection only. Risk interpretation is unavailable for Ethereum.</p>}
+              <ul className="inspect-reasons">{whyData.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>
+              {whyData.findings?.map(finding => <button key={finding.id} className="finding-link" onClick={() => selectFinding(finding)}>{finding.pattern_name} →</button>)}
+            </section>}
+          </>}
 
           {activeTab === 'recommendations' && (
             <div className="space-y-3 p-4 animate-fade-in">
@@ -1313,7 +993,7 @@ function InvestigateContent() {
                 const linkedTransaction = transactions.find((entry) => item.transaction_hashes.includes(entry.hash));
                 const review = () => {
                   if (linkedEvidence) { selectEvidence(linkedEvidence); setActiveTab('evidence'); }
-                  else if (linkedTransaction) { setSelectedTransaction(linkedTransaction); setActiveTab('transactions'); }
+                  else if (linkedTransaction) { selectTransfer(linkedTransaction.transfer_id || linkedTransaction.id || ''); }
                   else if (item.type === 'prepare_asset_action_request' || item.type === 'preserve_supporting_evidence') setActiveTab('action');
                   else setActiveTab('findings');
                 };
@@ -1328,10 +1008,11 @@ function InvestigateContent() {
           {activeTab === 'action' && (
             <div className="space-y-3 p-4 animate-fade-in">
               <div className="flex items-start justify-between gap-3">
-                <div><h3 className="text-sm font-bold text-white">Freeze Readiness</h3><p className="mt-0.5 text-[10px] text-slate-500">Investigation readiness for an external preservation/freeze request.</p></div>
+                <div><h3 className="text-sm font-bold text-white">Action readiness</h3><p className="mt-0.5 text-[10px] text-slate-500">Investigation readiness for an external preservation/freeze request.</p></div>
                 <span className={`rounded border px-2 py-1 text-[9px] font-bold ${actionReadiness?.ready ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-amber-500/30 bg-amber-500/10 text-amber-400'}`}>{actionReadiness?.ready ? 'READY' : 'INCOMPLETE'}</span>
               </div>
               <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-slate-400">This is operational readiness recorded from the current investigation. CryptoTrace does not execute or independently verify a blockchain freeze or external action.</div>
+              {caseData.blockchain === 'ethereum' && <p className="trail-notice">Action requests are unavailable for Ethereum. Review and preserve the observed evidence.</p>}
               {actionReadiness ? (
                 <>
                   <section className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3" aria-label="Freeze readiness facts">
@@ -1346,10 +1027,10 @@ function InvestigateContent() {
                     <div id="readiness-checklist-heading" className="text-[9px] font-bold uppercase tracking-widest text-slate-500">Readiness checklist</div>
                     <div className="mt-2 space-y-1.5">{actionReadiness.checks.map((check) => <div key={check.key} className="flex items-start gap-2 text-[10px]"><span className={check.complete ? 'text-green-400' : 'text-amber-400'}>{check.complete ? '✓' : '○'}</span><span className={check.complete ? 'text-slate-300' : 'text-slate-500'}>{check.label}</span></div>)}</div>
                   </section>
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  {caseData.blockchain === 'demo' && <div className="grid gap-2 sm:grid-cols-2">
                     <button type="button" onClick={() => void createActionRequest('preservation_request')} disabled={!canMutate || !actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-bold text-[var(--ct-primary)] disabled:cursor-not-allowed disabled:opacity-40">{actionLoading ? 'Preparing…' : 'RECORD PRESERVATION REQUEST'}</button>
                     <button type="button" onClick={() => void createActionRequest('freeze_request')} disabled={!canMutate || !actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded bg-[var(--ct-primary)] px-3 text-[10px] font-bold text-[#ffffff] disabled:cursor-not-allowed disabled:opacity-40">RECORD FREEZE REQUEST</button>
-                  </div>
+                  </div>}
                   {actionReadiness.evidence_ids.length === 0 && <p className="text-[10px] text-amber-400">No supporting evidence is available for a request.</p>}
                 </>
               ) : <p className="text-xs text-slate-500">Run the investigation first to derive readiness from case data.</p>}
@@ -1358,39 +1039,12 @@ function InvestigateContent() {
             </div>
           )}
 
-          {activeTab === 'transactions' && selectedTransaction && (
-            <div className="p-4 border-b border-[var(--ct-outline-variant)] animate-fade-in">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <h3 className="text-sm font-bold text-white">Transaction Detail</h3>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Observed movement selected from the trace</p>
-                </div>
-                <button type="button" aria-label="Clear selected transaction" onClick={() => setSelectedTransaction(null)} className="min-h-10 min-w-10 flex items-center justify-center text-slate-500 hover:text-white"><XCircle className="w-4 h-4" /></button>
-              </div>
-              <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 space-y-1.5">
-                <div className="text-[10px] text-blue-300 font-mono break-all">{selectedTransaction.hash}</div>
-                <div className="text-xs text-white font-mono">{displayAmount(selectedTransaction)} {selectedTransaction.asset}</div>
-                <div className="text-[10px] break-all text-slate-400">Event: {selectedTransaction.transfer_id || 'Legacy event'} | Base units: {selectedTransaction.amount_base_units ?? 'Unavailable'} | Decimals: {selectedTransaction.token_decimals ?? 'Unavailable'}</div>
-                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2 border-t border-blue-500/10 pt-2">
-                  <div className="min-w-0">
-                    <div className="text-[9px] uppercase tracking-widest text-slate-500">Source</div>
-                    <div className="mt-1 break-all font-mono text-[10px] text-slate-300">{selectedTransaction.from_address}</div>
-                  </div>
-                  <ArrowRight aria-hidden="true" className="mt-4 h-3.5 w-3.5 shrink-0 text-blue-400" />
-                  <div className="min-w-0 text-right">
-                    <div className="text-[9px] uppercase tracking-widest text-slate-500">Destination</div>
-                    <div className="mt-1 break-all font-mono text-[10px] text-slate-300">{selectedTransaction.to_address}</div>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500">
-                  <span>Hop {selectedTransaction.hop_number ?? '—'}</span>
-                  <span>{selectedTransaction.timestamp ? new Date(selectedTransaction.timestamp).toLocaleString() : 'Timestamp unavailable'}</span>
-                  {selectedTransaction.source && <span>{selectedTransaction.source}</span>}
-                </div>
-                <button type="button" onClick={() => void saveTransactionEvidence(selectedTransaction)} disabled={!canMutate || savingEvidence} className="mt-1 inline-flex min-h-10 items-center gap-1.5 text-[10px] text-cyan-400 hover:text-cyan-300 disabled:opacity-50"><Bookmark className="w-3 h-3" /> {savingEvidence ? 'Saving…' : 'SAVE EVIDENCE'}</button>
-              </div>
-            </div>
-          )}
+          {activeTab === 'transactions' && selectedTransaction && !investigating && <TransferInspector
+            transfer={selectedTransaction} network={caseData.blockchain || ''} capability={caseData.capability}
+            canSave={canMutate} saving={savingEvidence} message={evidenceMessage}
+            onSave={() => void saveTransactionEvidence(selectedTransaction)}
+            onClose={() => { setSelectedTransaction(null); setSelection(null); }}
+            onWallet={selectWallet} onFocus={() => { setShowMoneyTrail(true); setFocusVersion(v => v + 1); }} />}
 
           {/* Findings Tab */}
           {activeTab === 'findings' && (
@@ -1418,17 +1072,17 @@ function InvestigateContent() {
                 <p className="mt-2 text-[10px] leading-relaxed text-slate-400">Risk prioritizes investigator review. Wallet-level scores and contributing signals are available in the Wallet Inspector.</p>
               </div>
               {findings.length === 0 ? (
-                <p className="text-xs text-slate-500">No findings yet. Run investigation first.</p>
+                <p className="text-xs text-slate-500">{caseData.blockchain === 'ethereum' ? 'Risk interpretation is not available for Ethereum. Observed transfers are not fraud findings.' : 'No findings recorded in this run.'}</p>
               ) : findings.map((f, i) => (
-                <div key={f.id || `${f.pattern_name}-${i}`} className="bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg p-3">
-                  <div className="mb-3 flex items-center gap-2">
+                <details key={f.id || `${f.pattern_name}-${i}`} open={selectedFinding?.id === f.id && !!selectedFinding} className="bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg p-3">
+                  <summary onClick={event => { event.preventDefault(); if (selectedFinding === f) setSelectedFinding(null); else selectFinding(f); }} className="mb-3 flex cursor-pointer items-center gap-2">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                     <span className="text-xs font-medium text-white">{f.pattern_name}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ml-auto
                       ${f.severity === 'high' || f.severity === 'critical' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
                       {f.severity?.toUpperCase()}
                     </span>
-                  </div>
+                  </summary>
                   <div className="space-y-3">
                     <div>
                       <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">What happened</div>
@@ -1480,7 +1134,11 @@ function InvestigateContent() {
                       </div>
                     </div>
                   )}
-                </div>
+                  <div className="inspect-actions">
+                    <button onClick={() => { setRecordFilter(''); setActiveTab('evidence'); const linked = evidence.find(e => e.finding_id === f.id); if (linked) selectEvidence(linked); }}>View evidence ({evidence.filter(e => e.finding_id === f.id).length})</button>
+                    <button onClick={() => setActiveTab('recommendations')}>Review next action</button>
+                  </div>
+                </details>
               ))}
             </div>
           )}
@@ -1538,7 +1196,7 @@ function InvestigateContent() {
               )}
               {evidence.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-[var(--ct-outline-variant)] px-3 py-4 text-xs text-[var(--ct-ink-muted)]">No evidence yet. Run investigation first.</p>
-              ) : evidence.map((e, i) => (
+              ) : evidence.filter(e => !recordFilter || e.wallet_address === recordFilter || transactions.some(t => t.hash === e.transaction_hash && (t.from_address === recordFilter || t.to_address === recordFilter))).map((e, i) => (
                 <button type="button" key={e.id || i} onClick={() => selectEvidence(e)} aria-pressed={selectedEvidence?.id === e.id} className={`w-full text-left bg-[var(--ct-surface)] border rounded-lg p-3 ${selectedEvidence?.id === e.id ? 'border-[#8aa9a9]' : 'border-[var(--ct-outline-variant)]'}`}>
                   <div className="flex items-center gap-2 mb-1">
                     <Bookmark className="w-3 h-3 text-blue-400" />
@@ -1678,19 +1336,18 @@ function InvestigateContent() {
               <div className="space-y-2">
                 {transactions.length === 0 ? (
                   <p className="rounded-lg border border-dashed border-[var(--ct-outline-variant)] px-3 py-4 text-xs text-[var(--ct-ink-muted)]">No traced transactions are available for this case.</p>
-                ) : transactions.map((t, i) => (
+                ) : transactions.filter(t => !recordFilter || t.from_address === recordFilter || t.to_address === recordFilter).map((t, i) => (
                   <div
                     key={t.id || t.hash || i}
                     role="button"
                     tabIndex={0}
                     aria-pressed={selectedTransaction?.transfer_id === t.transfer_id && selectedTransaction?.id === t.id}
                     aria-label={`Select transaction ${t.hash}`}
-                    onClick={() => { setSelectedTransaction(t); setActiveTab('transactions'); }}
+                    onClick={() => { selectTransfer(t.transfer_id || t.id || ''); }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();
-                        setSelectedTransaction(t);
-                        setActiveTab('transactions');
+                        selectTransfer(t.transfer_id || t.id || '');
                       }
                     }}
                     className={`bg-[var(--ct-surface)] border rounded-lg p-2.5 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ct-primary)]
@@ -1772,16 +1429,18 @@ function InvestigateContent() {
               ) : aiMessages.length === 0 && (
                 <div className="p-4">
                   <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3 text-xs leading-relaxed text-[var(--ct-ink-muted)]">
-                    Hello. I’m the CryptoTrace investigation copilot. Ask me to explain this case, walk through the money trail, or point to supporting evidence.
+                    Review a case question. Answers use persisted findings, transfers, and evidence; no new blockchain facts are inferred.
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2" aria-label="Example questions">
                     {[
-                      'Summarize this case',
-                      'Where did the money go?',
-                      'What evidence supports this?',
-                      'What should I investigate next?',
+                      'Why was this wallet flagged?',
+                      'Explain the money trail.',
+                      'Why is this the leading destination?',
+                      'What evidence supports this finding?',
+                      'What should I review next?',
+                      'What information is missing?',
                     ].map((q) => (
-                      <button type="button" key={q} onClick={() => askAI(q)}
+                      <button type="button" key={q} disabled={!canMutate || aiLoading || investigating} onClick={() => askAI(q)}
                         className="min-h-10 rounded-full border border-[#8aa9a9] bg-white px-3 py-1.5 text-left text-[10px] font-medium text-[#124343] hover:bg-[#f4f4ef]">
                         {q}
                       </button>
@@ -1900,7 +1559,7 @@ function InvestigateContent() {
                   return (
                     <button
                       key={i}
-                      onClick={() => { setSelectedNode(d); setActiveTab('overview'); loadWhy(d.address); }}
+                      onClick={() => selectWallet(d.address)}
                       className="w-full text-left bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg p-3 hover:border-[#8aa9a9] transition-colors"
                     >
                       <div className="flex items-center gap-2 mb-1">

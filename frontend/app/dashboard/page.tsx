@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import { shortAddress } from '@/lib/investigation';
 import { CapabilityNotice } from '@/components/CapabilityNotice';
 import { capabilityLabel, type CapabilityState, type NetworkCapability } from '@/lib/capabilities';
 import {
@@ -344,7 +345,12 @@ export default function DashboardPage() {
                       <div className="text-xs text-slate-500">
                         {new Date(c.created_at).toLocaleDateString()}
                       </div>
-                      <div className="text-xs text-slate-600 mt-0.5">{c.blockchain}</div><CapabilityNotice capability={c.capability} />
+                      <div className="mt-1 text-xs font-semibold text-[var(--ct-ink)]">{c.blockchain === 'ethereum' ? 'Ethereum Mainnet' : c.blockchain === 'demo' ? 'Demo Network' : c.blockchain}</div>
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] sm:justify-end">
+                        <span className="rounded border border-[var(--ct-outline-variant)] px-2 py-1">{c.capability.data_origin === 'observed' ? 'PROVIDER-OBSERVED DATA' : c.capability.data_origin === 'demo' ? 'DEMO DATA' : 'NO OBSERVED DATA'}</span>
+                        <span className="rounded border border-[var(--ct-outline-variant)] px-2 py-1">{(c.capability.observation_state || c.capability.result_state).replaceAll('_', ' ').toUpperCase()}</span>
+                      </div>
+                      {c.capability.destination && <div className="mt-2 text-[11px] text-[var(--ct-ink-muted)]" title={c.capability.destination.address}>Candidate: {shortAddress(c.capability.destination.address)} · attribution requires review</div>}
                     </div>
                     <ChevronRight className="h-4 w-4 text-[var(--ct-outline)] group-hover:text-[var(--ct-primary)]" />
                   </div>
@@ -461,7 +467,7 @@ function CreateCaseModal({ onClose, onCreated }: { onClose: () => void; onCreate
               <select
                 id="wallet-intake-blockchain-input"
                 value={blockchain}
-                onChange={(e) => setBlockchain(e.target.value)}
+                onChange={(e) => { setBlockchain(e.target.value); if (e.target.value !== 'demo') { setWallet(''); setTitle('Wallet observation'); setDescription(''); setAmount(''); } }}
                 className="ct-field px-4 py-2.5 text-sm"
               >
                 <option value="demo">Demo Network</option>
