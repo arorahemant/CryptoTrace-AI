@@ -6,7 +6,7 @@ import secrets
 from typing import Optional
 from urllib.parse import urlparse
 
-from pydantic import model_validator
+from pydantic import model_validator, SecretStr, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
 
     # Blockchain Providers
+    ALCHEMY_API_KEY: Optional[SecretStr] = Field(default=None, exclude=True, repr=False)
     ETHERSCAN_API_KEY: Optional[str] = None
     BLOCKCHAIN_RPC_URL: Optional[str] = None
 

@@ -5,6 +5,21 @@ Abstract interface that all blockchain data providers must implement.
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ProviderPage:
+    """One bounded observation; an empty page is not necessarily exhaustion."""
+    records: list[dict] = field(default_factory=list)
+    continuation: str | None = None
+    exhausted: bool = False
+    partial_coverage: bool = False
+    errors: list[dict] = field(default_factory=list)
+    observation_boundaries: dict = field(default_factory=dict)
+    requested_block_range: dict = field(default_factory=dict)
+    retrieved_at: str | None = None
+    provenance: dict = field(default_factory=dict)
 
 
 class BlockchainProvider(ABC):

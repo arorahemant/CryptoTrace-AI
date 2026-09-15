@@ -78,6 +78,9 @@ def _recommendation(
 
 async def build_recommendations(db: AsyncSession, case: Case) -> list[dict]:
     """Derive stable recommendations from persisted investigation facts only."""
+    from app.core.capabilities import current_observation
+    if not current_observation(case):
+        return []
     wallets = (await db.scalars(select(Wallet).where(Wallet.case_id == case.id))).all()
     transactions = (await db.scalars(select(Transaction).where(Transaction.case_id == case.id))).all()
     findings = (await db.scalars(select(PatternFinding).where(PatternFinding.case_id == case.id))).all()
@@ -89,6 +92,17 @@ async def build_recommendations(db: AsyncSession, case: Case) -> list[dict]:
     )).all()
     requests = (await db.scalars(select(AssetActionRequest).where(AssetActionRequest.case_id == case.id))).all()
 
+    if getattr(case.blockchain, "value", None) == "ethereum":
+        evidence = [e for e in evidence if (e.metadata_ or {}).get("run_id") == (case.analysis_summary or {}).get("run_id")]
+        selection = await destination_context(db, case)
+        selected = selection["selected"]
+        if not transactions:
+            return []
+        return [_recommendation(case=case, kind="review_destination_attribution",
+            title="Review bounded blockchain observations", action="Review transfer evidence and coverage",
+            reason="These are observed transfers within a bounded historical interval. A destination candidate is not proof of ownership, wrongdoing, current custody, or recoverable funds.",
+            priority="medium", evidence=evidence, transaction_hashes=[t.hash for t in transactions],
+            target_wallet=selected["address"] if selected else None, source="current run observations and coverage")]
     recommendations: list[dict] = []
     selection = await destination_context(db, case)
     destination = next((wallet for wallet in wallets if selection["selected"] and wallet.address == selection["selected"]["address"]), None)

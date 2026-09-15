@@ -86,7 +86,7 @@ the current source. Backend keys must never be prefixed with
 |---|---|---|---|
 | `PYTHON_VERSION` | `3.12.14` | `3.12.14` until the dependency stack is deliberately revalidated | Render service-level runtime pin; non-secret and fully qualified. |
 | `APP_ENV` | `staging` | `production` | Only `local` may enable privileged demo accounts. |
-| `DEMO_MODE` | Explicitly `true` | `false` only after live provider integration | Demo data may be used in staging, but privileged demo account seeding is local-only. Non-demo startup currently refuses to run because only `DemoProvider` exists. |
+| `DEMO_MODE` | Explicitly `true` | `false` with configured Alchemy and production settings | Demo data may be used in staging, but privileged demo account seeding is local-only. Non-demo startup requires backend `ALCHEMY_API_KEY` plus the existing production settings. Explicit Demo Network remains synthetic. |
 | `SEED_DEMO_ACCOUNTS` | `false` | `false` | `true` is accepted only with `APP_ENV=local` and `DEMO_MODE=true`. |
 | `DEBUG` | `false` recommended | `false` | Production configuration rejects `true`. |
 | `DATABASE_URL` | Managed PostgreSQL URL | Required managed PostgreSQL URL | The runtime accepts generic `postgresql://` input and normalizes it to the asyncpg dialect. SQLite is not allowed when `DEMO_MODE=false`. |
@@ -95,6 +95,7 @@ the current source. Backend keys must never be prefixed with
 | `USE_SQLITE` | Explicitly `false` with hosted PostgreSQL | Unset/false | `DEMO_MODE=true` defaults to SQLite even when `DATABASE_URL` exists; hosted demo staging must override that default. `true` is rejected in non-demo mode. |
 | `OPENAI_API_KEY` | Optional | Optional, if live LLM summaries are approved | Backend-only; no live call is currently verified. |
 | `AI_MODEL` | Optional | Optional | Used only by the configured LLM path. |
+| `ALCHEMY_API_KEY` | Backend only, optional for Demo | Required for Ethereum observations | Never pass to frontend/Android. Configuration is not proof of connectivity; inspect run capability. |
 | `ETHERSCAN_API_KEY` | Not used by current provider | Not sufficient by itself | Configuration field exists, but no live provider adapter consumes it. |
 | `BLOCKCHAIN_RPC_URL` | Not used by current provider | Not sufficient by itself | Configuration field exists, but no live provider adapter consumes it. |
 | `MAX_TRACE_HOPS` | Default acceptable | Review before live traffic | Existing bounded tracing control. |

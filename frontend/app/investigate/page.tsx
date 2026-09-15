@@ -356,7 +356,7 @@ function InvestigateContent() {
         intermediaries: currentInvestigation?.intermediaries || previous?.intermediaries || [],
         findings: findingsData.findings || [],
         risk: currentInvestigation?.risk || previous?.risk || {
-          overall: currentCase?.summary?.risk_level || 'low',
+          overall: currentCase?.blockchain === 'ethereum' ? 'unassessed' : currentCase?.summary?.risk_level || 'low',
           by_wallet: {},
         },
         vasp_attributions: currentInvestigation?.vasp_attributions || previous?.vasp_attributions || {},
@@ -392,14 +392,31 @@ function InvestigateContent() {
   }, [caseId, router]);
 
   // ─── Run Investigation ────────────────────────────────────
+  const [fromBlock, setFromBlock] = useState('');
+  const [toBlock, setToBlock] = useState('');
   const runInvestigation = async () => {
+    const ethereum = caseData?.blockchain === 'ethereum';
+    if (ethereum && (!/^\d+$/.test(fromBlock) || !Number.isSafeInteger(Number(fromBlock)) ||
+      (toBlock !== '' && (!/^\d+$/.test(toBlock) || !Number.isSafeInteger(Number(toBlock)) || Number(toBlock) < Number(fromBlock))))) {
+      setActionError('Enter a valid historical start block and an optional end block at or after it.');
+      return;
+    }
     setInvestigating(true);
     setActionError('');
+    if (ethereum) {
+      setNodes([]); setEdges([]); setTransactions([]); setFindings([]); setEvidence([]);
+      setReport(null); setInvestigation(null); setTimeline([]);
+      setActionReadiness(null); setActionRequests([]); setRecommendations([]);
+    }
     try {
-      const result = await api.investigate(caseId);
+      const result = await api.investigate(caseId, ethereum ? { from_block: Number(fromBlock), ...(toBlock ? { to_block: Number(toBlock) } : {}), max_hops: 2, min_amount: 0 } : undefined);
       setInvestigation(result);
       setCaseData((prev) => prev ? { ...prev, status: result.status, capability: result.capability } : prev);
 
+      if (result.capability?.processing_state === 'failed') {
+        setActionError('Provider attempt failed. No previous result is being reused. See capability and coverage.');
+        return;
+      }
       // Build graph from result
       if (result.graph) {
         buildGraphVisualization(result.graph);
@@ -870,7 +887,7 @@ function InvestigateContent() {
   const hasInvestigation = hasAnalysis(caseData?.capability) && nodes.length > 0;
   const canMutate = !!caseData?.permissions?.includes('case.write') && caseData.lifecycle !== 'closed';
   const riskBadge = getRiskBadge(investigation?.risk?.overall || caseData?.summary?.risk_level || 'low');
-  const analysisAvailable = caseData?.capability?.provider_state === 'available';
+  const analysisAvailable = caseData?.capability?.can_investigate ?? caseData?.capability?.provider_state === 'available';
   const traceHopCount = transactions.reduce((maxHop, transaction) => Math.max(maxHop, transaction.hop_number ?? 0), 0);
   const suspiciousTransactionCount = transactions.filter((transaction) => transaction.is_suspicious).length;
   const linkedEvidenceCount = evidence.filter((item) => item.transaction_hash || item.finding_id).length;
@@ -941,6 +958,15 @@ function InvestigateContent() {
 
       <div className="shrink-0 px-4 py-2">
         <CapabilityNotice capability={caseData?.capability} />
+        {caseData.blockchain === 'ethereum' && (
+          <div className="mt-2 flex flex-wrap items-end gap-3 text-xs">
+            <label>Historical start block<input aria-label="Historical start block" inputMode="numeric" value={fromBlock} onChange={e => setFromBlock(e.target.value)} className="block rounded border px-2 py-1" placeholder="Required" /></label>
+            <label>End block<input aria-label="Historical end block" inputMode="numeric" value={toBlock} onChange={e => setToBlock(e.target.value)} className="block rounded border px-2 py-1" placeholder="Latest finalized block" /></label>
+            <button type="button" onClick={runInvestigation} disabled={!canMutate || investigating || !analysisAvailable} className="ct-button-primary px-3 py-1 disabled:opacity-50">{investigating ? 'Observing?' : 'Run Ethereum observation'}</button>
+            <span>Up to 2 hops / 100 transfers. External ETH and standard ERC-20 only. No ownership or fraud confirmation.</span>
+            {caseData.capability.coverage && <span className="w-full">Run {caseData.capability.run_id}: blocks {caseData.capability.coverage.observation_boundaries?.from_block ?? 'unavailable'}?{caseData.capability.coverage.observation_boundaries?.to_block ?? 'unavailable'}; {caseData.capability.coverage.partial ? 'partial coverage' : 'queried interval exhausted'}; {caseData.capability.coverage.provider_requests ?? 0} provider requests.</span>}
+          </div>
+        )}
         <div className="mt-1 flex items-center justify-between text-xs">
           <span>Case: {caseData?.lifecycle === 'closed' ? 'Closed by investigator' : 'Open'}{!canMutate ? ' ? Read-only access' : ''}</span>
           {canMutate && <button type="button" className="ct-button-secondary px-3" onClick={async () => {

@@ -174,7 +174,8 @@ class AIService:
     async def _build_context(self, case_uuid) -> Optional[Dict[str, Any]]:
         """Build structured context from case investigation data."""
         case = await self.db.get(Case, case_uuid)
-        if not case:
+        from app.core.capabilities import current_observation
+        if not case or not current_observation(case):
             return None
 
         # Fetch wallets
@@ -199,7 +200,7 @@ class AIService:
         e_result = await self.db.execute(
             select(Evidence).where(Evidence.case_id == case_uuid)
         )
-        evidence = e_result.scalars().all()
+        evidence = [e for e in e_result.scalars().all() if case.blockchain.value == "demo" or (e.metadata_ or {}).get("run_id") == (case.analysis_summary or {}).get("run_id")]
 
         # Fetch risk
         r_result = await self.db.execute(
@@ -230,6 +231,7 @@ class AIService:
 
         return {
             "destination": (await destination_context(self.db, case))["selected"],
+            "coverage": (case.analysis_summary or {}).get("stats", {}).get("coverage"),
             "run_id": (case.analysis_summary or {}).get("run_id") or f"legacy:{case.id}",
             "case": {
                 "case_number": case.case_number,

@@ -26,10 +26,9 @@ logger = logging.getLogger(__name__)
 
 def validate_runtime_mode():
     """Refuse non-demo startup until a live provider is actually configured."""
-    if not settings.DEMO_MODE:
+    if not settings.DEMO_MODE and not (settings.ALCHEMY_API_KEY and settings.ALCHEMY_API_KEY.get_secret_value()):
         raise RuntimeError(
-            "A non-demo blockchain provider is not configured; keep DEMO_MODE=true "
-            "until live provider integration is implemented and verified"
+            "A non-demo blockchain provider is not configured; set backend ALCHEMY_API_KEY"
         )
 
 
@@ -159,7 +158,7 @@ async def health_check():
         "app": settings.APP_NAME,
         "demo_mode": settings.DEMO_MODE,
         "demo_login_available": settings.demo_accounts_allowed,
-        "live_provider_available": False,
+        "live_provider_available": bool(settings.ALCHEMY_API_KEY and settings.ALCHEMY_API_KEY.get_secret_value()),
     }
 
 

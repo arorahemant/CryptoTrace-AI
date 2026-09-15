@@ -73,6 +73,8 @@ async def _case_context(db: AsyncSession, case: Case) -> dict:
         )
     findings = (await db.scalars(select(PatternFinding).where(PatternFinding.case_id == case.id))).all()
     evidence = (await db.scalars(select(Evidence).where(Evidence.case_id == case.id))).all()
+    if getattr(case.blockchain, "value", None) == "ethereum":
+        evidence = [item for item in evidence if (item.metadata_ or {}).get("run_id") == capability_payload(case)["run_id"]]
     latest = transactions[0] if transactions else None
     supporting_finding = next(
         (
@@ -102,6 +104,8 @@ async def _case_context(db: AsyncSession, case: Case) -> dict:
         {"key": "asset_amount_available", "label": "Observed asset and amount available", "complete": bool(latest and latest.asset and latest.amount is not None)},
         {"key": "attribution_available", "label": "Attribution available", "complete": has_attribution},
     ]
+    if getattr(case.blockchain, "value", None) == "ethereum":
+        checks.append({"key": "external_action_unavailable", "label": "External action is not supported by blockchain observations", "complete": False})
     return {
         "capability": capability_payload(case),
         "case_id": case.id,
@@ -164,6 +168,8 @@ async def _serialize(request: AssetActionRequest, db: AsyncSession) -> dict:
 
 async def _get_request(case_id: str, request_id: str, db: AsyncSession, user: User, *, write: bool = False) -> AssetActionRequest:
     case = await _get_authorized_case(case_id, db, user, permission="case.write" if write else "case.read")
+    if write and getattr(case.blockchain, "value", None) == "ethereum":
+        raise HTTPException(status_code=409, detail="External asset actions are outside the Ethereum observation scope")
     try:
         request_uuid = uuid.UUID(request_id)
     except ValueError:
@@ -213,6 +219,8 @@ async def create_action_request(
     current_user: User = Depends(_get_user),
 ):
     case = await _get_authorized_case(case_id, db, current_user, permission="case.write")
+    if getattr(case.blockchain, "value", None) == "ethereum":
+        raise HTTPException(status_code=409, detail="External asset actions are outside the Ethereum observation scope")
     target = await db.scalar(select(Wallet).where(Wallet.case_id == case.id, Wallet.address == request.target_wallet.strip()))
     if not target or not target.is_destination:
         raise HTTPException(status_code=422, detail="Target wallet must be an identified destination in this case")

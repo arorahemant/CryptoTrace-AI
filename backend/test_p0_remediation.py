@@ -59,7 +59,9 @@ def test_demo_secret_is_ephemeral_and_jwt_round_trip_works():
     token = create_access_token({"sub": "security-regression"})
     payload = decode_access_token(token)
     assert payload and payload["sub"] == "security-regression"
-    assert decode_access_token(token[:-1] + ("a" if token[-1] != "a" else "b")) is None
+    header, payload, signature = token.split(".")
+    tampered_signature = ("a" if signature[0] != "a" else "b") + signature[1:]
+    assert decode_access_token(".".join((header, payload, tampered_signature))) is None
 
 
 def test_valid_production_secret_is_accepted_without_embedding_a_secret():

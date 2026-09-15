@@ -240,6 +240,12 @@ class WalletResponse(BaseModel):
 # ─── Transaction (Canonical) ──────────────────────────────────────────────────
 
 class ExactTransferFields(BaseModel):
+    block_number: Optional[int] = None
+    block_hash: Optional[str] = None
+    transaction_status: Optional[int] = None
+    log_index: Optional[int] = None
+    token_contract: Optional[str] = None
+    provenance: Optional[dict] = None
     transfer_id: Optional[str] = None
     chain_id: Optional[str] = None
     event_index: Optional[str] = None
@@ -461,6 +467,8 @@ class PublicCaseComparisonResponse(BaseModel):
 # ─── Investigation ────────────────────────────────────────────────────────────
 
 class InvestigateRequest(BaseModel):
+    from_block: Optional[int] = Field(default=None, ge=0, le=2**53-1)
+    to_block: Optional[int] = Field(default=None, ge=0, le=2**53-1)
     max_hops: int = Field(default=5, ge=1, le=10)
     min_amount: float = Field(default=0.001, ge=0)
     time_window_hours: int = Field(default=720, ge=1, le=8760)

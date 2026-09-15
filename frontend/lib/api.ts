@@ -178,6 +178,8 @@ class ApiClient {
 
   // ─── Investigation ────────────────────────────────────
   async investigate(caseId: string, options?: {
+    from_block?: number;
+    to_block?: number;
     max_hops?: number;
     min_amount?: number;
     direction?: string;

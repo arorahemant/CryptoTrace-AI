@@ -34,6 +34,8 @@ class TraceEngine:
         time_window_hours: int = 720,
         direction: str = "outgoing",
         max_transactions: int = 200,
+        from_block: int | None = None,
+        to_block: int | None = None,
     ) -> Dict[str, Any]:
         """
         Trace fund movement from a starting wallet.
@@ -51,6 +53,16 @@ class TraceEngine:
             raise ValueError("Invalid trace direction")
         if not Decimal(str(min_amount)).is_finite() or min_amount < 0:
             raise ValueError("Invalid minimum amount")
+        from app.providers.alchemy import AlchemyEthereumProvider
+        if isinstance(self.provider, AlchemyEthereumProvider):
+            if chain != "ethereum":
+                raise ValueError("Alchemy supports Ethereum Mainnet only")
+            from app.engines.ethereum_trace import trace_ethereum
+            return await trace_ethereum(self.provider, starting_address, max_hops=max_hops,
+                max_transactions=max_transactions, direction=direction,
+                from_block=from_block, to_block=to_block)
+        if chain != "demo":
+            raise ValueError("Real chains require an explicit supported provider")
         visited_addresses: Set[str] = set()
         visited_transfer_ids: Set[str] = set()
         event_records = {}

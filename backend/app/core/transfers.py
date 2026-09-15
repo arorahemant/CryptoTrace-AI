@@ -9,7 +9,8 @@ from decimal import Decimal, localcontext
 from typing import Iterable
 
 FIELDS = ("transfer_id", "chain_id", "event_index", "asset_id", "amount_base_units",
-          "token_decimals", "amount_exact", "amount_precision", "run_id")
+          "token_decimals", "amount_exact", "amount_precision", "run_id",
+          "block_number", "block_hash", "transaction_status", "log_index", "token_contract", "provenance")
 
 
 def decimal_amount(units: str, decimals: int) -> str:

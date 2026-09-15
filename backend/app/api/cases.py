@@ -14,7 +14,7 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.core.permissions import require_permission, permissions_for
-from app.core.capabilities import capability_for, capability_payload, ResultState
+from app.core.capabilities import capability_for, capability_payload, ResultState, current_observation
 from app.api.auth import account_allowed
 from app.core.audit import record_audit_event
 from app.core.security import decode_access_token
@@ -241,6 +241,9 @@ async def get_case(
         select(func.count()).where(Evidence.case_id == case.id)
     )
 
+    if case.blockchain == Blockchain.ETHEREUM:
+        items = (await db.scalars(select(Evidence).where(Evidence.case_id == case.id))).all()
+        evidence_count = sum((e.metadata_ or {}).get("run_id") == capability_payload(case)["run_id"] for e in items)
     # Get overall risk
     risk_result = await db.execute(
         select(RiskAssessment)
@@ -250,6 +253,9 @@ async def get_case(
     )
     top_risk = risk_result.scalars().first()
 
+    if not current_observation(case):
+        wallet_count = tx_count = finding_count = evidence_count = 0
+        top_risk = None
     case_data = _case_to_response(case)
     return {
         **case_data.model_dump(),
@@ -332,11 +338,14 @@ async def investigate(
     This is the PRIMARY action — trace, analyze, detect, assess.
     """
     case = await _get_authorized_case(case_id, db, current_user, permission="case.write")
-    if case.blockchain != Blockchain.DEMO:
+    if case.blockchain not in {Blockchain.DEMO, Blockchain.ETHEREUM}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "provider_not_connected", "message": "Report accepted. Analysis provider is not connected.", "capability": capability_payload(case)},
         )
+    if case.blockchain == Blockchain.ETHEREUM and (request.from_block is None or
+            (request.to_block is not None and request.to_block < request.from_block)):
+        raise HTTPException(status_code=422, detail="Ethereum requires a historical from_block and an ordered block interval")
     already_started = case.status in (
         CaseStatus.INVESTIGATING,
         CaseStatus.REVIEW,
@@ -344,7 +353,7 @@ async def investigate(
     ) or await db.scalar(
         select(Wallet.id).where(Wallet.case_id == case.id).limit(1)
     ) is not None
-    if not already_started:
+    if not already_started or case.blockchain == Blockchain.ETHEREUM:
         record_audit_event(
             db,
             user=current_user,
@@ -363,24 +372,25 @@ async def investigate(
             min_amount=request.min_amount,
             time_window_hours=request.time_window_hours,
             direction=request.direction,
+            from_block=request.from_block, to_block=request.to_block,
         )
         record_audit_event(
             db,
             user=current_user,
-            action="investigation_completed",
+            action="investigation_failed" if capability_for(case).processing_state.value == "failed" else "investigation_completed",
             resource_type="case",
             resource_id=case_id,
-            details={"max_hops": request.max_hops, "direction": request.direction},
+            details={"max_hops": result.get("stats", {}).get("trace_parameters", {}).get("max_hops", request.max_hops), "direction": request.direction, "run_id": result.get("run_id")},
             request=request_context,
         )
         return {**result, "capability": capability_payload(case)}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception:
-        logger.exception("Investigation failed for case %s", case_id)
+        logger.error("Investigation failed for case %s", case_id)
         await db.rollback()
         failed_case = await db.get(Case, uuid.UUID(case_id))
-        failed_case.analysis_summary = {"processing_state": "failed", "result_state": "not_available", "limitations": ["analysis_failed"]}
+        failed_case.analysis_summary = {"run_id": str(uuid.uuid4()), "model_version": 3 if failed_case.blockchain == Blockchain.ETHEREUM else 2, "provider": "alchemy_ethereum" if failed_case.blockchain == Blockchain.ETHEREUM else "demo", "processing_state": "failed", "result_state": "not_available", "limitations": ["analysis_failed"], "stats": {"coverage": {"state": "unavailable", "partial": True}}}
         failed_case.status = CaseStatus.REVIEW
         await db.commit()
         raise HTTPException(status_code=500, detail={"code": "analysis_failed", "message": "Analysis failed. Retry is available.", "capability": capability_payload(failed_case)})
@@ -394,6 +404,8 @@ async def get_graph(
 ):
     """Get the investigation graph for visualization."""
     case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
     service = InvestigationService(db)
     try:
         return {**await service.get_graph_data(case_id), "capability": capability_payload(case)}
@@ -409,6 +421,8 @@ async def get_wallets(
 ):
     """Get all discovered wallets for a case."""
     case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
     result = await db.execute(
         select(Wallet).where(Wallet.case_id == uuid.UUID(case_id))
     )
@@ -445,6 +459,8 @@ async def get_transactions(
 ):
     """Get all traced transactions for a case."""
     case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
     result = await db.execute(
         select(Transaction)
         .where(Transaction.case_id == uuid.UUID(case_id))
@@ -485,6 +501,8 @@ async def get_findings(
 ):
     """Get suspicious pattern findings for a case."""
     case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
     result = await db.execute(
         select(PatternFinding).where(PatternFinding.case_id == uuid.UUID(case_id))
     )
@@ -522,6 +540,8 @@ async def save_evidence(
 ):
     """Persist an investigator-selected evidence item for this case."""
     case = await _get_authorized_case(case_id, db, current_user, permission="case.write")
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
 
     if request.finding_id:
         finding = await db.get(PatternFinding, request.finding_id)
@@ -568,9 +588,9 @@ async def save_evidence(
         title=request.title,
         description=request.description,
         reason=request.reason,
-        source=request.source,
+        source=transaction.source if transaction and case.blockchain == Blockchain.ETHEREUM else request.source,
         is_bookmarked=True,
-        metadata_={**{k: v for k, v in (request.metadata or {}).items() if k not in FIELDS}, **(record_fields(transaction) if transaction else {})},
+        metadata_={**{k: v for k, v in (request.metadata or {}).items() if k not in FIELDS}, **(record_fields(transaction) if transaction else {}), "run_id": capability_payload(case)["run_id"]},
     )
     db.add(evidence)
     await db.flush()
@@ -610,10 +630,12 @@ async def get_evidence(
 ):
     """Get all evidence items for a case."""
     case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
     result = await db.execute(
         select(Evidence).where(Evidence.case_id == uuid.UUID(case_id))
     )
-    evidence = result.scalars().all()
+    evidence = [item for item in result.scalars().all() if case.blockchain == Blockchain.DEMO or (item.metadata_ or {}).get("run_id") == capability_payload(case)["run_id"]]
     return {
         "capability": capability_payload(case),
         "evidence": [
@@ -626,6 +648,7 @@ async def get_evidence(
                 "description": e.description,
                 "reason": e.reason,
                 "transfer_id": (e.metadata_ or {}).get("transfer_id"),
+                "metadata": e.metadata_ or {},
                 "transaction_hash": e.transaction_hash,
                 "wallet_address": e.wallet_address,
                 "source": e.source,
@@ -646,6 +669,8 @@ async def get_timeline(
 ):
     """Get chronological investigation timeline."""
     case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
     result = await db.execute(
         select(InvestigationEvent)
         .where(InvestigationEvent.case_id == uuid.UUID(case_id))
@@ -662,6 +687,7 @@ async def get_timeline(
                 "description": e.description,
                 "timestamp": e.timestamp.isoformat() if e.timestamp else None,
                 "transfer_id": (e.metadata_ or {}).get("transfer_id"),
+                "metadata": e.metadata_ or {},
                 "transaction_hash": e.transaction_hash,
                 "from_address": e.from_address,
                 "to_address": e.to_address,
@@ -684,6 +710,8 @@ async def get_fund_flow(
 ):
     """Get fund flow paths."""
     case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
     result = await db.execute(
         select(FundFlow)
         .where(FundFlow.case_id == uuid.UUID(case_id))
@@ -719,6 +747,8 @@ async def why_flagged(
 ):
     """WHY WAS THIS FLAGGED? — Signature feature."""
     case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
     service = InvestigationService(db)
     try:
         return {**await service.get_why_explanation(case_id, wallet_address), "capability": capability_payload(case)}
@@ -734,6 +764,8 @@ async def get_replay(
 ):
     """Get replay events for chronological animation."""
     case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
     service = InvestigationService(db)
     events = await service.get_replay_events(case_id)
     return {
@@ -777,9 +809,13 @@ async def generate_report(
     ai_service = AIService(db)
     context = await ai_service._build_context(case.id)
 
-    data_label = "DEMO DATA - synthetic investigation. Not a live blockchain observation." if capability_payload(case)["data_origin"] == "demo" else "No verified live blockchain observation is claimed by this report."
+    data_label = "DEMO DATA - synthetic investigation. Not a live blockchain observation." if capability_payload(case)["data_origin"] == "demo" else "Observed Ethereum Mainnet data from Alchemy within the recorded historical interval. Not proof of ownership, fraud, current custody, or VASP identity. No continuous real-time monitoring."
     sections = [{"title": "Data and capability", "section_type": "analysis", "content": data_label + " Processing completion does not close the case. No external freeze or government action is verified."}]
 
+    if case.blockchain == Blockchain.ETHEREUM:
+        import json
+        sections[0]["run_id"] = capability_payload(case)["run_id"]
+        sections[0]["content"] += " Coverage: " + json.dumps(capability_payload(case).get("coverage"), sort_keys=True)
     # Case Information (FACT)
     sections.append({
         "title": "Case Information",
@@ -934,6 +970,8 @@ async def get_report(
 ):
     """Get the latest report for a case."""
     case = await _get_authorized_case(case_id, db, current_user)
+    if case.blockchain != Blockchain.DEMO and not current_observation(case):
+        raise HTTPException(status_code=409, detail={"code": "analysis_not_available", "capability": capability_payload(case)})
     result = await db.execute(
         select(Report)
         .where(Report.case_id == uuid.UUID(case_id))
@@ -941,7 +979,7 @@ async def get_report(
         .limit(1)
     )
     report = result.scalars().first()
-    if not report:
+    if not report or (case.blockchain == Blockchain.ETHEREUM and (not report.content or report.content[0].get("run_id") != capability_payload(case)["run_id"])):
         raise HTTPException(status_code=404, detail="No report generated yet")
 
     return {

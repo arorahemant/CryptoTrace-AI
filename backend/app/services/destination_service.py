@@ -30,6 +30,13 @@ def classify_candidates(wallets: dict, attributions: dict) -> list[dict]:
 
 
 async def destination_context(db, case) -> dict:
+    from app.core.capabilities import current_observation
+    if not current_observation(case):
+        return {"selected": None, "candidates": [], "policy": "no_current_observation"}
+    if getattr(case.blockchain, "value", None) == "ethereum":
+        stats = (case.analysis_summary or {}).get("stats", {})
+        return {"selected": stats.get("destination"), "candidates": stats.get("destination_candidates", []),
+                "policy": "current_run_selection"}
     wallets = (await db.scalars(select(Wallet).where(Wallet.case_id == case.id))).all()
     rows = (await db.scalars(select(VASPAttribution).where(VASPAttribution.case_id == case.id)
                             .order_by(VASPAttribution.created_at.desc(), VASPAttribution.id))).all()

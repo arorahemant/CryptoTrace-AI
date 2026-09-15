@@ -28,6 +28,10 @@ def normalize_asset(blockchain: Blockchain, asset: str | None) -> str | None:
 def analysis_capability(blockchain: Blockchain) -> tuple[str, str]:
     if blockchain == Blockchain.DEMO:
         return "analysis_available", "Analysis available for Demo Network using deterministic demonstration data."
+    if blockchain == Blockchain.ETHEREUM:
+        from app.core.config import settings
+        if settings.ALCHEMY_API_KEY and settings.ALCHEMY_API_KEY.get_secret_value():
+            return "analysis_available", "Bounded Ethereum Mainnet observations available; select a historical block interval."
     return "analysis_not_connected", f"Report accepted. Analysis provider not connected for {blockchain.value.title()}."
 
 

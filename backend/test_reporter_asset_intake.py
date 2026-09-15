@@ -132,11 +132,9 @@ def test_investigator_sees_network_asset_and_unsupported_case_cannot_run_demo_an
         headers=investigator_headers,
         json={},
     )
-    assert investigation.status_code == 409
-    detail = investigation.json()["detail"]
-    assert detail["code"] == "provider_not_connected"
-    assert detail["capability"]["provider_state"] == "not_connected"
-    assert detail["capability"]["data_origin"] == "none"
+    # Ethereum is now supported, but an explicit historical interval is required.
+    assert investigation.status_code == 422
+    assert "historical from_block" in investigation.json()["detail"]
 
     assert httpx.get(
         f"{BASE}/reporter/submissions/review",

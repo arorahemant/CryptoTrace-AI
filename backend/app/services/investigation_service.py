@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from app.models.models import (
     Case, Wallet, Transaction, FundFlow, PatternFinding,
@@ -48,8 +48,9 @@ class InvestigationService:
 
     def __init__(self, db: AsyncSession, provider: Optional[BlockchainProvider] = None):
         self.db = db
-        self.provider = provider or get_provider("demo")
-        self.trace_engine = TraceEngine(self.provider)
+        self._explicit_provider = provider is not None
+        self.provider = provider
+        self.trace_engine = TraceEngine(provider) if provider else None
         self.graph_engine = GraphEngine()
         self.pattern_engine = PatternEngine()
         self.risk_engine = RiskEngine()
@@ -61,16 +62,22 @@ class InvestigationService:
         min_amount: float = 0.001,
         time_window_hours: int = 720,
         direction: str = "outgoing",
+        from_block: int | None = None,
+        to_block: int | None = None,
     ) -> Dict[str, Any]:
         """Run one case investigation at a time and reuse persisted results."""
         async with _get_investigation_lock(str(case_id)):
-            return await self._run_investigation(
+            result = await self._run_investigation(
                 case_id=case_id,
                 max_hops=max_hops,
                 min_amount=min_amount,
                 time_window_hours=time_window_hours,
                 direction=direction,
+                from_block=from_block, to_block=to_block,
             )
+            if not result["is_demo"]:
+                await self.db.commit()  # Keep the run lock through snapshot publication.
+            return result
 
     async def _run_investigation(
         self,
@@ -79,6 +86,8 @@ class InvestigationService:
         min_amount: float = 0.001,
         time_window_hours: int = 720,
         direction: str = "outgoing",
+        from_block: int | None = None,
+        to_block: int | None = None,
     ) -> Dict[str, Any]:
         """
         Run the complete investigation pipeline for a case.
@@ -111,14 +120,34 @@ class InvestigationService:
         # retries after a successful request return that snapshot instead of
         # appending another set of child rows. A failed request is rolled back
         # by the request transaction, so it remains retryable.
-        if await self._has_persisted_investigation(case):
+        chain = case.blockchain.value if case.blockchain else "demo"
+        if not self._explicit_provider:
+            self.provider = get_provider(chain)
+            self.trace_engine = TraceEngine(self.provider)
+        if chain != "demo" and self.provider.is_demo:
+            raise ValueError("Real investigations cannot use DemoProvider")
+        if chain == "ethereum":
+            case.reported_wallet = case.reported_wallet.lower()
+            if from_block is None or (to_block is not None and to_block < from_block):
+                raise ValueError("Ethereum requires a historical from_block and an ordered block interval")
+            max_hops, min_amount = min(max_hops, 2), 0
+            # Retain evidence as archived artifacts; it must not support a new run.
+            old_evidence = (await self.db.scalars(select(Evidence).where(Evidence.case_id == case.id))).all()
+            for item in old_evidence:
+                prior_finding = str(item.finding_id) if item.finding_id else (item.metadata_ or {}).get("archived_finding_id")
+                item.finding_id = None
+                item.metadata_ = {**(item.metadata_ or {}), "archived": True, "archived_finding_id": prior_finding}
+            await self.db.flush()
+            for model in (FundFlow, InvestigationEvent, RiskAssessment, VASPAttribution, PatternFinding, Transaction, Wallet):
+                await self.db.execute(delete(model).where(model.case_id == case.id))
+        if chain == "demo" and await self._has_persisted_investigation(case):
             logger.info("Reusing persisted investigation for case %s", case.case_number)
             return await self._load_persisted_result(case)
 
         # Update case status
         case.status = CaseStatus.INVESTIGATING
         run_id = str(uuid.uuid4())
-        case.analysis_summary = {"run_id": run_id, "processing_state": "running", "result_state": "not_available"}
+        case.analysis_summary = {"run_id": run_id, "processing_state": "running", "result_state": "not_available", "provider": self.provider.provider_name, "model_version": 3 if chain == "ethereum" else 2}
         await self.db.flush()
 
         reported_wallet = case.reported_wallet
@@ -134,12 +163,15 @@ class InvestigationService:
             min_amount=min_amount,
             time_window_hours=time_window_hours,
             direction=direction,
+            from_block=from_block, to_block=to_block,
         )
 
         raw_transactions = trace_result["transactions"]
         for tx in raw_transactions:
             tx["run_id"] = run_id
         raw_wallets = trace_result["wallets"]
+        for wallet in raw_wallets.values():
+            wallet["run_id"] = run_id
         paths = trace_result["paths"]
         stats = trace_result["stats"]
         # Stable API aliases used by the investigator UI and validation suite.
@@ -169,6 +201,8 @@ class InvestigationService:
             raw_wallets[candidate["address"]]["endpoint_kind"] = candidate["kind"]
             raw_wallets[candidate["address"]]["is_destination"] = candidate["kind"] != "not_expanded"
         stats["trace_parameters"] = {"max_hops": max_hops, "min_amount": str(min_amount), "time_window_hours": time_window_hours, "direction": direction}
+        if chain == "ethereum":
+            stats["trace_parameters"] = {"max_hops": max_hops, "max_transfers": 100, "direction": direction, "from_block": from_block, "to_block": to_block}
         stats["run_id"] = run_id
         stats["destination"] = selected
         stats["destination_candidates"] = candidates
@@ -185,7 +219,8 @@ class InvestigationService:
         intermediaries = self.graph_engine.get_intermediaries()
 
         # 6. Detect patterns
-        findings = self.pattern_engine.detect_all(raw_transactions, raw_wallets, paths)
+        # The Phase 2B slice provides observations, not calibrated fraud heuristics.
+        findings = self.pattern_engine.detect_all(raw_transactions, raw_wallets, paths) if chain == "demo" else []
         stats["findings"] = len(findings)
         finding_records = await self._save_findings(case, findings)
 
@@ -196,6 +231,8 @@ class InvestigationService:
             vasp_data=vasp_data,
             intermediary_data=intermediaries,
         )
+        if chain == "ethereum":
+            risk_results = {}  # No fraud-risk calibration is claimed for this observation slice.
         await self._save_risk_assessments(case, risk_results)
 
         # 9. Generate evidence
@@ -222,10 +259,14 @@ class InvestigationService:
         )
 
         case.status = CaseStatus.REVIEW
-        case.analysis_summary = {**analysis_summary(stats, raw_transactions), "run_id": run_id, "model_version": 2}
+        if "coverage" in stats:
+            stats["coverage"]["run_id"] = run_id
+            stats["coverage"]["destination"] = selected
+        case.analysis_summary = {**analysis_summary(stats, raw_transactions), "run_id": run_id,
+            "model_version": 3 if chain == "ethereum" else 2, "provider": self.provider.provider_name}
         await self.db.flush()
 
-        overall_risk = self.risk_engine.get_overall_risk(risk_results)
+        overall_risk = "unassessed" if case.blockchain == Blockchain.ETHEREUM else self.risk_engine.get_overall_risk(risk_results)
 
         return {
             "case_id": str(case.id),
@@ -235,7 +276,7 @@ class InvestigationService:
             "status": case.status.value,
             "is_demo": stats.get("is_demo", True),
             "stats": stats,
-            "graph": {**graph_data, "destination": selected},
+            "graph": {**graph_data, "destination": selected, "run_id": run_id},
             "primary_path": primary_path,
             "destination": selected,
             "intermediaries": intermediaries,
@@ -418,7 +459,7 @@ class InvestigationService:
             vasp_data=vasp_data,
             risk_data=risk_results,
         )
-        overall_risk = self.risk_engine.get_overall_risk(risk_results)
+        overall_risk = "unassessed" if case.blockchain == Blockchain.ETHEREUM else self.risk_engine.get_overall_risk(risk_results)
 
         stats.update(saved_summary.get("stats", {}))
         stats["total_amount_traced"] = None
@@ -475,7 +516,7 @@ class InvestigationService:
                 total_received=meta.get("total_received", 0),
                 total_sent=meta.get("total_sent", 0),
                 transaction_count=meta.get("transaction_count", 0),
-                metadata_={k: meta[k] for k in ("endpoint_kind", "expansion_state", "received_by_asset", "sent_by_asset") if k in meta},
+                metadata_={k: meta[k] for k in ("endpoint_kind", "expansion_state", "received_by_asset", "sent_by_asset", "run_id") if k in meta},
             )
             self.db.add(wallet)
 
@@ -585,6 +626,12 @@ class InvestigationService:
         transactions: List[Dict],
     ):
         """Generate evidence items from findings, risk, and attributions."""
+        if case.blockchain == Blockchain.ETHEREUM:
+            for tx in transactions:
+                self.db.add(Evidence(case_id=case.id, evidence_type="transaction",
+                    title="Observed Ethereum transfer", description=f"Observed {tx['amount_exact']} {tx['asset']} [{tx['asset_id']}]. Not proof of ownership or wrongdoing.",
+                    transaction_hash=tx["hash"], wallet_address=tx["to_address"], source=tx["source"],
+                    metadata_=transfer_fields(tx)))
         # Evidence from pattern findings
         for f, finding_record in zip(findings, finding_records):
             evidence = Evidence(
@@ -823,7 +870,8 @@ class InvestigationService:
                 Evidence.wallet_address == wallet_address,
             )
         )
-        evidence_items = evidence_result.scalars().all()
+        case = await self.db.get(Case, case_uuid)
+        evidence_items = [e for e in evidence_result.scalars().all() if case.blockchain == Blockchain.DEMO or (e.metadata_ or {}).get("run_id") == (case.analysis_summary or {}).get("run_id")]
 
         # Get risk
         risk_result = await self.db.execute(

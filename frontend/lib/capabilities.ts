@@ -9,6 +9,15 @@ export interface CapabilityState {
   processed_at: string | null;
   data_as_of: string | null;
   limitations: string[];
+  can_investigate?: boolean;
+  observation_state?: string | null;
+  coverage?: {
+    state?: string; partial?: boolean; exhausted?: boolean; run_id?: string;
+    observation_boundaries?: { from_block?: number; to_block?: number; max_hops?: number };
+    requested_block_range?: { from_block?: number; to_block?: number | null };
+    provider_requests?: number; retrieved_at?: string;
+  } | null;
+  destination?: { address: string; kind: string } | null;
 }
 
 export interface NetworkCapability {
@@ -20,6 +29,7 @@ export interface NetworkCapability {
 export function capabilityLabel(state?: CapabilityState): string {
   if (!state) return 'NOT AVAILABLE — capability could not be loaded';
   const origin = state.data_origin === 'demo' ? 'DEMO DATA' : state.data_origin === 'observed' ? 'OBSERVED DATA' : 'NO OBSERVED DATA';
+  if (state.provider === 'alchemy_ethereum') return `${origin} ? ${(state.observation_state || 'not_verified').replaceAll('_', ' ').toUpperCase()} ? ${state.processing_state.toUpperCase()}`;
   if (state.provider_state === 'not_connected') return `${origin} · PROVIDER NOT CONNECTED`;
   if (state.processing_state === 'failed') return `${origin} · FAILED`;
   if (state.processing_state === 'running') return `${origin} · PROCESSING`;
