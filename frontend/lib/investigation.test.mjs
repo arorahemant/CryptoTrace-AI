@@ -71,10 +71,10 @@ const require = createRequire(import.meta.url);
 function component(name) {
   const source = readFileSync(new URL(`../components/investigation/${name}.tsx`, import.meta.url), 'utf8');
   const output = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-  const module = { exports: {} };
+  const compiled = { exports: {} };
   const load = path => path.startsWith('@/lib/') ? require(`./${path.slice(6)}.ts`) : require(path);
-  new Function('require', 'module', 'exports', output)(load, module, module.exports);
-  return module.exports;
+  new Function('require', 'module', 'exports', output)(load, compiled, compiled.exports);
+  return compiled.exports;
 }
 const { TransferInspector, WalletInspector } = component('RecordInspector');
 const { CoverageStrip } = component('CoverageStrip');
@@ -110,4 +110,59 @@ test('coverage keeps failed attempts and non-exhausted historical bounds explici
   assert.ok(html.includes('NO OBSERVED DATA'));
   assert.ok(html.includes(graph.run_id));
   assert.ok(html.includes('Historical interval only'));
+});
+
+const highActivity = JSON.parse(readFileSync(new URL('../../backend/tests/fixtures/high_activity_alchemy.json', import.meta.url)));
+const observedGraph = highActivity.graph;
+const { default: Network3D } = component('Network3D');
+
+test('all 62 captured addresses fit inside the initial 3D viewport', () => {
+  const html = renderToStaticMarkup(React.createElement(Network3D, { graph: observedGraph, path: selectedPath(observedGraph, null), isolate: false, selection: null, focus: 0, onWallet: noop, onTransfer: noop }));
+  const points = [...html.matchAll(/transform="translate\(([-\d.]+) ([-\d.]+)\)" class="trail-svg-node"/g)];
+  assert.equal(points.length, highActivity.summary.nodes);
+  for (const [, x, y] of points) { assert.ok(Math.abs(Number(x)) < 450, 'wallet outside horizontal viewport'); assert.ok(Math.abs(Number(y)) < 265, 'wallet outside vertical viewport'); }
+});
+
+test('captured high-activity coverage names the stop reason and request count', () => {
+  const html = renderToStaticMarkup(React.createElement(CoverageStrip, { capability: highActivity.capability }));
+  for (const value of ['PARTIAL', 'TIMEOUT', '29 provider requests', '20000047', '20000355', highActivity.capability.run_id]) assert.ok(html.includes(value));
+  assert.ok(!html.includes('Yes, within observation boundaries'));
+});
+
+test('high-activity views retain every observed wallet and event with independent selection', () => {
+  const before = JSON.stringify(observedGraph);
+  assert.equal(observedGraph.nodes.length, 62);
+  assert.equal(observedGraph.edges.length, 62);
+  assert.equal(new Set(observedGraph.edges.map(edge => edge.hash)).size, 4);
+  const layout = layoutGraph(observedGraph);
+  assert.equal(layout.length, observedGraph.nodes.length);
+  layout.forEach((item, index) => assert.equal(item.node, observedGraph.nodes[index]));
+  const html = renderToStaticMarkup(React.createElement(Network3D, { graph: observedGraph, path: selectedPath(observedGraph, null), isolate: false, selection: null, focus: 0, onWallet: noop, onTransfer: noop }));
+  assert.equal((html.match(/class="trail-svg-edge"/g) || []).length, observedGraph.edges.length);
+  assert.equal((html.match(/class="trail-svg-node"/g) || []).length, observedGraph.nodes.length);
+  for (const edge of observedGraph.edges) {
+    const selection = { wallets: [edge.source, edge.target], transfers: [edge.id], label: 'Observed event' };
+    const path = selectedPath(observedGraph, selection);
+    assert.deepEqual([...path.transfers], [edge.id]);
+    const isolated = renderToStaticMarkup(React.createElement(Network3D, { graph: observedGraph, path, isolate: true, selection, focus: 1, onWallet: noop, onTransfer: noop }));
+    assert.equal((isolated.match(/class="trail-svg-edge"/g) || []).length, 1);
+    assert.equal((isolated.match(/class="trail-svg-node"/g) || []).length, path.wallets.size);
+  }
+  assert.equal(JSON.stringify(observedGraph), before);
+});
+
+test('captured high-activity transfer and wallet inspectors keep actual values and partial coverage', () => {
+  for (const transfer of highActivity.transactions) {
+    const html = renderToStaticMarkup(React.createElement(TransferInspector, { transfer, network: 'ethereum', capability: highActivity.capability, canSave: false, saving: false, message: '', onSave: noop, onClose: noop, onWallet: noop, onFocus: noop }));
+    assert.ok(html.includes(transfer.amount_base_units));
+    assert.ok(html.includes(transfer.amount_exact));
+    assert.ok(html.includes(transfer.hash));
+    assert.ok(html.includes('PARTIAL'));
+  }
+  for (const wallet of observedGraph.nodes) {
+    const html = renderToStaticMarkup(React.createElement(WalletInspector, { wallet, network: 'Ethereum Mainnet', onClose: noop, onTransfers: noop, onEvidence: noop, onWhy: noop, onFocus: noop }));
+    assert.ok(html.includes(wallet.address));
+    assert.ok(html.includes('UNKNOWN'));
+    assert.ok(!html.includes('VERIFIED'));
+  }
 });

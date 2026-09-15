@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useMemo, useRef, useState } from 'react';
-import { layoutGraph, projectPoint, shortAddress, walletRole, boundaryLabel, type TrailGraph, type TrailSelection } from '@/lib/investigation';
+import { layoutGraph, networkFrame, projectPoint, shortAddress, walletRole, boundaryLabel, type TrailGraph, type TrailSelection } from '@/lib/investigation';
 import { displayAmount } from '@/lib/transfers';
 
 interface Props {
@@ -19,11 +19,8 @@ function Scene({ graph, path, isolate, selection, focus, onWallet, onTransfer }:
   const [camera, setCamera] = useState({ yaw: -0.28, pitch: 0.18, zoom: 0.72, x: 0, y: 0 });
   const [panMode, setPanMode] = useState(false);
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  const focusNode = layout.find(item => item.node.address === selection?.wallets[0]);
-  const graphCenter = Math.max(0, ...layout.map(item => item.x)) / 2;
-  const [center, setCenter] = useState(() => ({ x: focus ? focusNode?.x ?? graphCenter : graphCenter, y: focus ? focusNode?.y ?? 0 : 0 }));
-  const centerX = center.x, centerY = center.y;
-  const points = layout.map(item => ({ ...item, projected: projectPoint({ x: item.x - centerX, y: item.y - centerY, z: item.z }, camera.yaw, camera.pitch, camera.zoom) }));
+  const [frame, setFrame] = useState(() => networkFrame(focus && path.wallets.size ? layout.filter(item => path.wallets.has(item.node.address)) : layout));
+  const points = layout.map(item => ({ ...item, projected: projectPoint({ x: (item.x - frame.x) * frame.scale, y: (item.y - frame.y) * frame.scale, z: (item.z - frame.z) * frame.scale }, camera.yaw, camera.pitch, camera.zoom) }));
   const byAddress = new Map(points.map(point => [point.node.address, point]));
   const activate = (event: React.KeyboardEvent, action: () => void) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); } };
   return <div className="trail-three">
@@ -32,9 +29,9 @@ function Scene({ graph, path, isolate, selection, focus, onWallet, onTransfer }:
       <button aria-pressed={panMode} onClick={() => setPanMode(true)}>Pan</button>
       <button aria-label="Rotate network left" onClick={() => setCamera(c => ({ ...c, yaw: c.yaw - 0.2 }))}>↶</button>
       <button aria-label="Rotate network right" onClick={() => setCamera(c => ({ ...c, yaw: c.yaw + 0.2 }))}>↷</button>
-      <button aria-label="Zoom in 3D network" onClick={() => setCamera(c => ({ ...c, zoom: Math.min(2, c.zoom * 1.2) }))}>+</button>
+      <button aria-label="Zoom in 3D network" onClick={() => setCamera(c => ({ ...c, zoom: Math.min(2 / frame.scale, c.zoom * 1.2) }))}>+</button>
       <button aria-label="Zoom out 3D network" onClick={() => setCamera(c => ({ ...c, zoom: Math.max(0.1, c.zoom / 1.2) }))}>−</button>
-      <button onClick={() => { setCamera({ yaw: -0.28, pitch: 0.18, zoom: 0.72, x: 0, y: 0 }); setCenter({ x: graphCenter, y: 0 }); }}>Reset camera</button>
+      <button onClick={() => { setCamera({ yaw: -0.28, pitch: 0.18, zoom: 0.72, x: 0, y: 0 }); setFrame(networkFrame(layout)); }}>Reset camera</button>
     </div>
     <svg viewBox="0 0 1000 650" className="trail-three-scene" aria-label="3D projected investigation network. Drag to rotate; select Pan to move. Arrow keys rotate; Shift and arrows pan." tabIndex={0}
       onKeyDown={event => {
@@ -63,7 +60,7 @@ function Scene({ graph, path, isolate, selection, focus, onWallet, onTransfer }:
           const mx = (source.x + target.x) / 2, my = (source.y + target.y) / 2 + bend;
           const d = edge.source === edge.target ? `M ${source.x - 12} ${source.y} C ${source.x - 100} ${source.y - 100}, ${source.x + 100} ${source.y - 100}, ${source.x + 12} ${source.y}` : `M ${source.x} ${source.y} Q ${mx} ${my} ${target.x} ${target.y}`;
           return <g key={edge.id} role="button" tabIndex={0} aria-label={`Inspect transfer ${displayAmount(edge)} ${edge.asset || ''}, ${edge.transfer_id || edge.id}`} onClick={() => onTransfer(edge.id)} onKeyDown={event => activate(event, () => onTransfer(edge.id))} className="trail-svg-edge">
-            <title>{displayAmount(edge)} {edge.asset} · {edge.timestamp || 'Timestamp unavailable'} · {edge.transfer_id || edge.id}</title>
+            <title>{`${displayAmount(edge)} ${edge.asset || ''} · ${edge.timestamp || 'Timestamp unavailable'} · ${edge.transfer_id || edge.id}`}</title>
             <path d={d} stroke="transparent" strokeWidth="18" fill="none" />
             <path d={d} stroke={selected ? '#245b65' : '#a3adb4'} strokeWidth={selected ? 3 : 1.5} fill="none" markerEnd="url(#network-arrow)" />
             {(selection?.transfers.includes(edge.id) || selection?.transfers.includes(edge.transfer_id || '')) && <text x={mx} y={my - 8} textAnchor="middle" className="trail-svg-label">{displayAmount(edge)} {edge.asset}</text>}
@@ -74,7 +71,7 @@ function Scene({ graph, path, isolate, selection, focus, onWallet, onTransfer }:
           if (isolate && !path.wallets.has(node.address)) return null;
           const limited = node.expansion_state !== 'expanded';
           return <g key={node.address} role="button" tabIndex={0} aria-label={`Inspect ${walletRole(node, graph.destination?.address)} ${node.address}. ${boundaryLabel(node)}`} onClick={() => onWallet(node.address)} onKeyDown={event => activate(event, () => onWallet(node.address))} transform={`translate(${p.x} ${p.y})`} className="trail-svg-node">
-            <title>{node.address} · {walletRole(node, graph.destination?.address)} · {boundaryLabel(node)}</title>
+            <title>{`${node.address} · ${walletRole(node, graph.destination?.address)} · ${boundaryLabel(node)}`}</title>
             <circle r={node.is_reported ? 19 : 14} fill={node.is_reported ? '#245b65' : '#fff'} stroke={path.wallets.has(node.address) ? '#245b65' : '#73818c'} strokeWidth="3" strokeDasharray={limited ? '4 3' : undefined} />
             <text y="-29" textAnchor="middle" className="trail-svg-label">{walletRole(node, graph.destination?.address)}</text>
             <text y="35" textAnchor="middle" className="trail-svg-address">{shortAddress(node.address)}</text>

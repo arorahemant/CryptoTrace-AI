@@ -95,7 +95,7 @@ export const TrailWorkspace = memo(function TrailWorkspace({ graph, selection, o
       })}
     </ol>}
     <div className="trail-canvas">
-      {view === '2d' ? <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodeClick={(_, node) => onWallet(node.id)} onEdgeClick={(_, edge) => onTransfer(edge.id)} nodesDraggable={false} nodesConnectable={false} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.25 }} minZoom={0.1} maxZoom={1.5} aria-label="2D money trail">
+      {view === '2d' ? <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodeClick={(_, node) => onWallet(node.id)} onEdgeClick={(_, edge) => onTransfer(edge.id)} nodesDraggable={false} nodesConnectable={false} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.25, minZoom: 0.02 }} minZoom={0.02} maxZoom={1.5} aria-label="2D money trail">
         <Background color="#dce1e5" gap={28} size={1} /><Controls showInteractive={false} />
       </ReactFlow> : <Network3D graph={graph} path={path} selection={selection} isolate={isolate} focus={focus + focusVersion} onWallet={onWallet} onTransfer={onTransfer} />}
     </div>

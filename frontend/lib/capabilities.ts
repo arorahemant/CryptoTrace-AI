@@ -16,6 +16,7 @@ export interface CapabilityState {
     observation_boundaries?: { from_block?: number; to_block?: number; max_hops?: number };
     requested_block_range?: { from_block?: number; to_block?: number | null };
     provider_requests?: number; retrieved_at?: string;
+    provider_errors?: { code: string }[];
   } | null;
   destination?: { address: string; kind: string } | null;
 }

@@ -97,6 +97,15 @@ export function layoutGraph(graph: TrailGraph) {
   });
 }
 
+// Frame all observed points, including large fan-outs, without removing nodes.
+export function networkFrame(points: { x: number; y: number; z: number }[]) {
+  const center = { x: 0, y: 0, z: 0 };
+  if (!points.length) return { ...center, scale: 1 };
+  for (const axis of ['x', 'y', 'z'] as const) center[axis] = (Math.min(...points.map(p => p[axis])) + Math.max(...points.map(p => p[axis]))) / 2;
+  const radius = Math.max(...points.map(p => Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z)));
+  return { ...center, scale: Math.min(1, 240 / Math.max(1, radius)) };
+}
+
 export function projectPoint(point: { x: number; y: number; z: number }, yaw: number, pitch: number, zoom: number) {
   const x = point.x * Math.cos(yaw) + point.z * Math.sin(yaw);
   const depth = -point.x * Math.sin(yaw) + point.z * Math.cos(yaw);
