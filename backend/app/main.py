@@ -18,6 +18,7 @@ from app.api.reporter import router as reporter_router
 from app.api.asset_actions import router as asset_actions_router
 from app.api.recommendations import router as recommendations_router
 from app.api.public_cases import router as public_cases_router
+from app.api.diagnostics import router as diagnostics_router
 from app.models.models import ReporterAccount, User, UserRole
 
 logging.basicConfig(level=logging.INFO)
@@ -147,6 +148,7 @@ app.include_router(reporter_router, prefix=settings.API_PREFIX)
 app.include_router(asset_actions_router, prefix=settings.API_PREFIX)
 app.include_router(recommendations_router, prefix=settings.API_PREFIX)
 app.include_router(public_cases_router, prefix=settings.API_PREFIX)
+app.include_router(diagnostics_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/health")
