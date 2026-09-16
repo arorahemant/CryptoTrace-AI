@@ -791,7 +791,7 @@ async def ai_query(
         raise HTTPException(status_code=400, detail="Question is too short")
 
     ai_service = AIService(db)
-    return {**await ai_service.query(case_id, question), "capability": capability_payload(case)}
+    return {**await ai_service.query(case_id, question, wallet_address=request.wallet_address, finding_id=request.finding_id), "capability": capability_payload(case)}
 
 
 @router.post("/{case_id}/report")
@@ -885,7 +885,7 @@ async def generate_report(
             for v in vasps:
                 vasp_text += (
                     f"• {v['wallet'][:16]}...: {v['entity']} "
-                    f"(confidence: {v['confidence']}, source: {v['source']})\n"
+                    f"(status: {v['attribution_status']}, source: {v['source']})\n"
                 )
             vasp_text += (
                 "\nNote: Attributions reflect available intelligence data. "
@@ -893,14 +893,14 @@ async def generate_report(
             )
             sections.append({
                 "title": "VASP Attribution",
-                "section_type": "inference",
+                "section_type": "analysis",
                 "content": vasp_text,
             })
 
         # Summary (AI SUMMARY)
         wallets = context.get("wallets", [])
         summary_text = (
-            f"Investigation traced {context.get('transactions_count', 0)} transactions "
+            f"Investigation recorded {context.get('transactions_count', 0)} transfer events "
             f"across {len(wallets)} wallets from the reported wallet "
             f"{case.reported_wallet[:16]}...\n\n"
             f"Key findings: {len(findings)} suspicious patterns detected. "
@@ -909,8 +909,8 @@ async def generate_report(
         selected_vasp = next((v for v in vasps if selected and v["wallet"] == selected["address"]), None)
         if selected_vasp:
             summary_text += (
-                f"Funds were traced to a wallet attributed to "
-                f"{selected_vasp['entity']} ({selected_vasp['confidence']} confidence). "
+                f"The selected candidate has attribution status "
+                f"{selected_vasp['attribution_status']}: {selected_vasp['entity'] or 'UNKNOWN'}. "
             )
         summary_text += "This report is generated from structured investigation data."
 
@@ -924,6 +924,17 @@ async def generate_report(
         })
 
     selected = context.get("destination") if context else None
+    if context and context.get('destination_intelligence'):
+        intelligence = context['destination_intelligence']
+        attribution = intelligence['attribution']
+        sections.append({'title': 'Destination Intelligence', 'section_type': 'analysis',
+            'content': f"Candidate: {selected['address'] if selected else 'UNKNOWN'}\n"
+                f"Attribution: {attribution['attribution_status']}\nEntity: {attribution['entity_name'] or 'UNKNOWN'}\n"
+                f"Source: {attribution['source_reference'] or attribution['source']}\n"
+                f"Verified at: {intelligence['verified_at'] or 'NOT AVAILABLE'}\nFreshness: {intelligence['freshness']}\n"
+                f"Supporting transfers: {len(intelligence['supporting_transfers'])}; evidence: {len(intelligence['evidence'])}.\n"
+                "Observed connections do not establish ownership, custody, fraud, continuity or recoverability.",
+            'metadata': {'destination_intelligence': intelligence}})
     sections.append({"title": "Destination selection and run", "section_type": "analysis",
                      "content": f"Run: {(case.analysis_summary or {}).get('run_id') or 'legacy:' + str(case.id)}. Candidate: {selected}. This is a bounded structural route, not proof of current custody or recoverable funds."})
     # Save report

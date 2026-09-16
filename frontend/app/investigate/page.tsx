@@ -6,18 +6,19 @@ import { Fragment, Suspense, useCallback, useMemo, useState, useEffect, useRef, 
 import { useRouter, useSearchParams } from 'next/navigation';
 import api, { ApiError } from '@/lib/api';
 import { displayAmount, type ExactTransfer, type AssetTotal, type DestinationCandidate } from '@/lib/transfers';
+import { DestinationIntelligencePanel, CopilotPanel, ActionReadinessSummary } from '@/components/investigation/IntelligencePanels';
+import type { DestinationIntelligence, CopilotAnswer, RecordReference } from '@/lib/intelligence';
 import { CoverageStrip } from '@/components/investigation/CoverageStrip';
 import { TrailWorkspace } from '@/components/investigation/TrailWorkspace';
 import { WalletInspector, TransferInspector } from '@/components/investigation/RecordInspector';
 import { shortAddress, type TrailSelection } from '@/lib/investigation';
 import { capabilityLabel, hasAnalysis, type CapabilityState } from '@/lib/capabilities';
 import { ReplayBar } from '@/components/investigation/ReplayBar';
-import { SafeMarkdown } from '@/components/investigation/SafeMarkdown';
 import {
   Shield, Search, Play,
   AlertTriangle, Eye, FileText, MessageSquare, ChevronLeft,
   Loader2,
-  Bookmark, ArrowRight, ClipboardList, Send, XCircle
+  Bookmark, ArrowRight, ClipboardList, XCircle
 } from 'lucide-react';
 import { ReactFlowProvider } from 'reactflow';
 
@@ -66,7 +67,7 @@ interface GraphEdgeData extends ExactTransfer {
   hop_number?: number;
 }
 
-interface GraphResponse { run_id?: string; destination?: DestinationCandidate | null; nodes: GraphNodeData[]; edges: GraphEdgeData[]; primary_path: string[]; }
+interface GraphResponse { destination_intelligence?: DestinationIntelligence; run_id?: string; destination?: DestinationCandidate | null; nodes: GraphNodeData[]; edges: GraphEdgeData[]; primary_path: string[]; }
 interface FindingData {
   id?: string;
   pattern_type?: string;
@@ -77,6 +78,7 @@ interface FindingData {
   trigger?: string;
   affected_wallets?: string[];
   supporting_transaction_ids?: string[];
+  supporting_transfer_ids?: string[];
   created_at?: string;
 }
 interface EvidenceData { transfer_id?: string; id: string; evidence_type?: string; title: string; description: string; reason?: string; transaction_hash?: string; wallet_address?: string; finding_id?: string; source?: string; created_at?: string; is_bookmarked?: boolean; }
@@ -241,7 +243,8 @@ function InvestigateContent() {
   const replayTimer = useRef<NodeJS.Timeout | null>(null);
 
   // AI
-  const [aiMessages, setAiMessages] = useState<Array<{ role: string; content: string }>>([]);
+  const [copilotAnswer, setCopilotAnswer] = useState<CopilotAnswer | null>(null);
+  const [copilotQuestion, setCopilotQuestion] = useState('');
   const [aiInput, setAiInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -389,7 +392,7 @@ function InvestigateContent() {
     setActionError('');
     if (ethereum) {
       setSelection(null); setSelectedFinding(null); setSelectedNode(null); setSelectedTransaction(null);
-      setSelectedEvidence(null); setWhyData(null); setAiMessages([]); setAiLoading(false);
+      setSelectedEvidence(null); setWhyData(null); setCopilotAnswer(null); setCopilotQuestion(''); setAiLoading(false);
       setReplayEvents([]); setReplayStep(-1); setReplaying(false); setRecordFilter('');
       setActiveTab('overview'); setEvidenceMessage(''); setActionMessage('');
       graphNodeData.current = {};
@@ -524,16 +527,16 @@ function InvestigateContent() {
     const q = question || aiInput.trim();
     if (!q) return;
 
-    setAiMessages(prev => [...prev, { role: 'user', content: q }]);
+    setCopilotQuestion(q); setCopilotAnswer(null);
     setAiInput('');
     setAiLoading(true);
 
     try {
-      const data = await api.askAI(caseId, q);
-      if (version === attemptVersion.current) setAiMessages(prev => [...prev, { role: 'assistant', content: data.answer }]);
+      const data = await api.askAI(caseId, q, { wallet_address: selectedNode?.address, finding_id: selectedFinding?.id });
+      if (version === attemptVersion.current && data.run_id === caseData.capability.run_id) setCopilotAnswer(data);
     } catch (err) {
       console.error('AI Copilot request failed', err);
-      if (version === attemptVersion.current) setAiMessages(prev => [...prev, { role: 'assistant', content: 'AI Copilot is unavailable right now. Review the case evidence and try again.' }]);
+      if (version === attemptVersion.current) setCopilotAnswer({ answer: 'NOT AVAILABLE — Copilot could not load current case records. Review the saved evidence and try again.', sections: [], supporting_records: [], sources: [], limitations: [], data_origin: 'none', attribution_status: 'unknown' });
     } finally {
       if (version === attemptVersion.current) setAiLoading(false);
     }
@@ -654,9 +657,16 @@ function InvestigateContent() {
     setActiveTab('overview');
   }, []);
 
+  const openIntelligenceRecord = (record: RecordReference) => {
+    if (record.kind === 'wallet') selectWallet(record.id);
+    if (record.kind === 'transfer') selectTransfer(record.id);
+    if (record.kind === 'finding') { const found = findings.find(f => f.id === record.id); if (found) selectFinding(found); }
+    if (record.kind === 'evidence') { const found = evidence.find(e => e.id === record.id); if (found) { selectEvidence(found); setSelectedFinding(null); setRecordFilter(''); setActiveTab('evidence'); } }
+  };
+
   const selectFinding = (finding: FindingData) => {
     setSelectedFinding(finding); setSelectedNode(null); setSelectedTransaction(null);
-    setSelection({ wallets: finding.affected_wallets || [], transfers: transactions.filter(t => finding.supporting_transaction_ids?.includes(t.hash)).map(t => t.transfer_id || t.id || ''), label: finding.pattern_name });
+    setSelection({ wallets: finding.affected_wallets || [], transfers: transactions.filter(t => finding.supporting_transfer_ids?.length ? finding.supporting_transfer_ids.includes(t.transfer_id || '') : finding.supporting_transaction_ids?.includes(t.hash)).map(t => t.transfer_id || t.id || ''), label: finding.pattern_name });
     setActiveTab('findings');
   };
 
@@ -797,10 +807,11 @@ function InvestigateContent() {
       <div className="investigation-context">
         <CoverageStrip capability={caseData.capability} />
         <section className="case-brief" aria-label="Case summary">
-          <div><span>Case status</span><strong>{caseData.lifecycle === 'closed' ? 'Closed' : caseData.status.replaceAll('_', ' ')}</strong><small>{!canMutate ? 'Read-only' : 'Investigator workspace'}</small></div>
+          <div><span>Case {caseData.case_number}</span><strong>{caseData.lifecycle === 'closed' ? 'Closed' : caseData.status.replaceAll('_', ' ')}</strong><small>{!canMutate ? 'Read-only' : 'Investigator workspace'}</small></div>
           <div><span>Network / risk</span><strong>{caseData.blockchain === 'ethereum' ? 'Ethereum Mainnet' : caseData.blockchain === 'demo' ? 'Demo Network' : caseData.blockchain}</strong><small>{riskCategory} RISK</small></div>
           <button onClick={() => selectWallet(caseData.reported_wallet)} disabled={!hasInvestigation}><span>Reported wallet</span><strong className="font-mono" title={caseData.reported_wallet}>{shortAddress(caseData.reported_wallet)}</strong><small>Investigation origin</small></button>
-          <button onClick={() => investigation?.graph.destination && selectWallet(investigation.graph.destination.address)} disabled={!investigation?.graph.destination}><span>Destination candidate</span><strong className="font-mono" title={investigation?.graph.destination?.address}>{investigation?.graph.destination ? shortAddress(investigation.graph.destination.address) : 'Not established'}</strong><small>{destinationNode?.vasp_name ? `${destinationNode.vasp_name} · ${attributionLabel(destinationNode.vasp_attribution_status)}` : 'Attribution unknown'}</small></button>
+          <button onClick={() => { setSelectedNode(null); setActiveTab('overview'); }} disabled={!investigation?.graph.destination}><span>Destination candidate</span><strong className="font-mono" title={investigation?.graph.destination?.address}>{investigation?.graph.destination ? shortAddress(investigation.graph.destination.address) : 'Not established'}</strong><small>{destinationNode?.vasp_name ? `${destinationNode.vasp_name} · ${attributionLabel(destinationNode.vasp_attribution_status)}` : 'Attribution unknown'}</small></button>
+          <button onClick={() => setActiveTab('transactions')}><span>Observed scope</span><strong>{transactions.length} transfers</strong><small>{investigation?.graph.nodes.length || 0} addresses</small></button>
           <button onClick={() => setActiveTab('findings')}><span>Key findings</span><strong>{findings.length}</strong><small>{caseData.blockchain === 'ethereum' ? 'Risk interpretation unavailable' : strongestFinding?.pattern_name || 'None recorded'}</small></button>
           <button onClick={() => setActiveTab('recommendations')}><span>Next action</span><strong>{recommendations.length ? 'Review recommendation' : 'Review coverage'}</strong><small>{recommendations[0]?.title || 'Check observation boundaries'}</small></button>
         </section>
@@ -957,6 +968,7 @@ function InvestigateContent() {
                 <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2.5"><div className="text-[9px] uppercase tracking-wide text-slate-500">Destination attribution</div><div className="mt-1 truncate text-xs font-semibold text-white">{destinationNode?.vasp_name || 'No attribution available'}</div><div className="mt-0.5 text-[9px] font-semibold text-slate-500">{attributionLabel(destinationNode?.vasp_attribution_status || destinationNode?.vasp_confidence)}</div></div>
               </section>
 
+              <DestinationIntelligencePanel data={investigation?.graph.destination_intelligence} onSelect={openIntelligenceRecord} />
               <section className="copilot-entry"><h3>Investigation Copilot</h3><p>Evidence-grounded explanations</p><button onClick={() => setActiveTab('ai')}>Explain the money trail →</button><button onClick={() => setActiveTab('ai')}>What should I review next? →</button></section>
               <details className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3">
                 <summary className="cursor-pointer text-[10px] font-semibold text-slate-400">Case assignment</summary>
@@ -1007,15 +1019,11 @@ function InvestigateContent() {
 
           {activeTab === 'action' && (
             <div className="space-y-3 p-4 animate-fade-in">
-              <div className="flex items-start justify-between gap-3">
-                <div><h3 className="text-sm font-bold text-white">Action readiness</h3><p className="mt-0.5 text-[10px] text-slate-500">Investigation readiness for an external preservation/freeze request.</p></div>
-                <span className={`rounded border px-2 py-1 text-[9px] font-bold ${actionReadiness?.ready ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-amber-500/30 bg-amber-500/10 text-amber-400'}`}>{actionReadiness?.ready ? 'READY' : 'INCOMPLETE'}</span>
-              </div>
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-slate-400">This is operational readiness recorded from the current investigation. CryptoTrace does not execute or independently verify a blockchain freeze or external action.</div>
+              <ActionReadinessSummary ready={!!actionReadiness?.ready} evidenceCount={actionReadiness?.evidence_count || 0} transferCount={transactions.filter(t => t.to_address === actionReadiness?.destination_wallet).length} candidate={actionReadiness?.destination_wallet} attribution={actionReadiness?.attribution_status || 'unknown'} isDemo={caseData.blockchain === 'demo'} dataOrigin={caseData.capability.data_origin} onEvidence={() => { setRecordFilter(''); setActiveTab('evidence'); }} onAudit={() => setActiveTab('audit')} />
               {caseData.blockchain === 'ethereum' && <p className="trail-notice">Action requests are unavailable for Ethereum. Review and preserve the observed evidence.</p>}
               {actionReadiness ? (
                 <>
-                  <section className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3" aria-label="Freeze readiness facts">
+                  <section className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3" aria-label="Request preparation facts">
                     <div className="grid grid-cols-2 gap-2 text-[10px]">
                       <div><div className="uppercase tracking-wide text-slate-500">Destination</div><div className="mt-1 break-all font-mono text-white">{actionReadiness.destination_wallet || 'UNKNOWN'}</div></div>
                       <div><div className="uppercase tracking-wide text-slate-500">Attribution</div><div className="mt-1 font-semibold text-white">{attributionLabel(actionReadiness.attribution_status)}</div><div className="mt-1 text-slate-400">{actionReadiness.attribution_entity || 'No attribution available'}</div><div className="mt-0.5 text-[9px] text-slate-500">{actionReadiness.attribution_source_reference || actionReadiness.attribution_provenance || 'Source unavailable'} · {actionReadiness.attribution_status === 'known_verified' ? 'Verified' : actionReadiness.attribution_status === 'likely_inferred' ? 'Not independently verified' : 'Unknown'}</div></div>
@@ -1028,8 +1036,8 @@ function InvestigateContent() {
                     <div className="mt-2 space-y-1.5">{actionReadiness.checks.map((check) => <div key={check.key} className="flex items-start gap-2 text-[10px]"><span className={check.complete ? 'text-green-400' : 'text-amber-400'}>{check.complete ? '✓' : '○'}</span><span className={check.complete ? 'text-slate-300' : 'text-slate-500'}>{check.label}</span></div>)}</div>
                   </section>
                   {caseData.blockchain === 'demo' && <div className="grid gap-2 sm:grid-cols-2">
-                    <button type="button" onClick={() => void createActionRequest('preservation_request')} disabled={!canMutate || !actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-bold text-[var(--ct-primary)] disabled:cursor-not-allowed disabled:opacity-40">{actionLoading ? 'Preparing…' : 'RECORD PRESERVATION REQUEST'}</button>
-                    <button type="button" onClick={() => void createActionRequest('freeze_request')} disabled={!canMutate || !actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded bg-[var(--ct-primary)] px-3 text-[10px] font-bold text-[#ffffff] disabled:cursor-not-allowed disabled:opacity-40">RECORD FREEZE REQUEST</button>
+                    <button type="button" onClick={() => void createActionRequest('preservation_request')} disabled={!canMutate || !actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded border border-[var(--ct-primary)] px-3 text-[10px] font-bold text-[var(--ct-primary)] disabled:cursor-not-allowed disabled:opacity-40">{actionLoading ? 'Preparing…' : 'PREPARE PRESERVATION REQUEST DRAFT'}</button>
+                    <button type="button" onClick={() => void createActionRequest('freeze_request')} disabled={!canMutate || !actionReadiness.evidence_ids.length || actionLoading} className="min-h-11 rounded bg-[var(--ct-primary)] px-3 text-[10px] font-bold text-[#ffffff] disabled:cursor-not-allowed disabled:opacity-40">PREPARE FREEZE REQUEST DRAFT</button>
                   </div>}
                   {actionReadiness.evidence_ids.length === 0 && <p className="text-[10px] text-amber-400">No supporting evidence is available for a request.</p>}
                 </>
@@ -1393,107 +1401,8 @@ function InvestigateContent() {
             </div>
           )}
 
-          {/* AI Tab */}
-          {activeTab === 'ai' && (
-            <div className="flex flex-col h-full animate-fade-in">
-              <div className="p-4 border-b border-[var(--ct-outline-variant)]">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-white">AI Investigation Copilot</h3>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Grounded in this case&apos;s findings, flow, and evidence</p>
-                  </div>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-400">STRUCTURED EXPLANATION</span>
-                </div>
-                {caseData?.is_demo && <p className="mt-2 text-[10px] text-amber-400">DEMO DATA context · verify conclusions against the evidence trail.</p>}
-                <div className="mt-3 grid grid-cols-3 gap-2" aria-label="Copilot grounding context">
-                  <div className="rounded border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2">
-                    <div className="text-sm font-semibold text-white">{transactions.length}</div>
-                    <div className="text-[9px] uppercase tracking-wide text-slate-500">Transfers</div>
-                  </div>
-                  <div className="rounded border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2">
-                    <div className="text-sm font-semibold text-white">{findings.length}</div>
-                    <div className="text-[9px] uppercase tracking-wide text-slate-500">Findings</div>
-                  </div>
-                  <div className="rounded border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-2">
-                    <div className="text-sm font-semibold text-white">{evidence.length}</div>
-                    <div className="text-[9px] uppercase tracking-wide text-slate-500">Evidence</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Suggested Questions */}
-              {!hasInvestigation ? (
-                <div className="m-4 rounded-lg border border-dashed border-[var(--ct-outline-variant)] px-3 py-4 text-xs text-[var(--ct-ink-muted)]">
-                  Run the investigation first so Copilot can use this case&apos;s trace, findings, and evidence.
-                </div>
-              ) : aiMessages.length === 0 && (
-                <div className="p-4">
-                  <div className="rounded-lg border border-[var(--ct-outline-variant)] bg-[var(--ct-surface)] p-3 text-xs leading-relaxed text-[var(--ct-ink-muted)]">
-                    Review a case question. Answers use persisted findings, transfers, and evidence; no new blockchain facts are inferred.
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2" aria-label="Example questions">
-                    {[
-                      'Why was this wallet flagged?',
-                      'Explain the money trail.',
-                      'Why is this the leading destination?',
-                      'What evidence supports this finding?',
-                      'What should I review next?',
-                      'What information is missing?',
-                    ].map((q) => (
-                      <button type="button" key={q} disabled={!canMutate || aiLoading || investigating} onClick={() => askAI(q)}
-                        className="min-h-10 rounded-full border border-[#8aa9a9] bg-white px-3 py-1.5 text-left text-[10px] font-medium text-[#124343] hover:bg-[#f4f4ef]">
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {aiMessages.map((msg, i) => (
-                  <div key={i} className={`${msg.role === 'user' ? 'text-right' : ''}`}>
-                    <div className={`inline-block max-w-[90%] px-3 py-2 rounded-lg text-xs leading-relaxed
-                      ${msg.role === 'user'
-                        ? 'bg-blue-600/20 text-blue-200 border border-blue-500/20'
-                        : 'bg-[var(--ct-surface)] text-[var(--ct-ink-muted)] border border-[var(--ct-outline-variant)]'
-                      }`}
-                    >
-                      {msg.role === 'assistant'
-                        ? <SafeMarkdown content={msg.content} />
-                        : <div className="whitespace-pre-wrap">{msg.content}</div>}
-                    </div>
-                  </div>
-                ))}
-                {aiLoading && (
-                  <div role="status" aria-live="polite" className="flex items-center gap-2 text-slate-500">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span className="text-xs">Analyzing case data...</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Input */}
-              <div className="p-3 border-t border-[var(--ct-outline-variant)]">
-                <div className="flex gap-2">
-                  <input
-                    value={aiInput}
-                    onChange={(e) => setAiInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && askAI()}
-                    aria-label="Ask the investigation copilot"
-                    disabled={!canMutate || !hasInvestigation || aiLoading}
-                    maxLength={1000}
-                    placeholder="Ask about the investigation..."
-                    className="flex-1 px-3 py-2 bg-[var(--ct-surface)] border border-[var(--ct-outline-variant)] rounded-lg text-xs text-[var(--ct-ink)]
-                      focus:outline-none focus:border-blue-500 placeholder:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                  <button type="button" onClick={() => askAI()} disabled={!canMutate || !hasInvestigation || aiLoading} aria-label="Send question to investigation copilot" className="min-h-10 min-w-10 flex items-center justify-center p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
-                    <Send className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Copilot uses references from the current case/run only. */}
+          {activeTab === 'ai' && <CopilotPanel answer={copilotAnswer} question={copilotQuestion} input={aiInput} loading={aiLoading} disabled={!canMutate || !hasInvestigation || investigating} contextLabel={selectedFinding?.pattern_name || selectedNode?.address || 'Current case and destination'} onInput={setAiInput} onAsk={askAI} onSelect={openIntelligenceRecord} />}
 
           {/* Report Tab */}
           {activeTab === 'report' && (

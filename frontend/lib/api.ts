@@ -284,10 +284,10 @@ class ApiClient {
   }
 
   // ─── AI ───────────────────────────────────────────────
-  async askAI(caseId: string, question: string) {
+  async askAI(caseId: string, question: string, selection?: { wallet_address?: string; finding_id?: string }) {
     return this.request(`/cases/${caseId}/ai/query`, {
       method: 'POST',
-      body: { question },
+      body: { question, ...selection },
     });
   }
 

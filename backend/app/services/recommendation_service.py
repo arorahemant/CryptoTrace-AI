@@ -6,7 +6,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.asset_actions import _case_context
-from app.services.attribution_service import normalize_attribution
 from app.services.destination_service import destination_context
 from app.core.transfers import record_fields
 from app.models.models import (
@@ -16,7 +15,6 @@ from app.models.models import (
     Evidence,
     PatternFinding,
     Transaction,
-    VASPAttribution,
     Wallet,
 )
 
@@ -85,11 +83,6 @@ async def build_recommendations(db: AsyncSession, case: Case) -> list[dict]:
     transactions = (await db.scalars(select(Transaction).where(Transaction.case_id == case.id))).all()
     findings = (await db.scalars(select(PatternFinding).where(PatternFinding.case_id == case.id))).all()
     evidence = (await db.scalars(select(Evidence).where(Evidence.case_id == case.id))).all()
-    attributions = (await db.scalars(
-        select(VASPAttribution)
-        .where(VASPAttribution.case_id == case.id)
-        .order_by(VASPAttribution.created_at.desc(), VASPAttribution.id)
-    )).all()
     requests = (await db.scalars(select(AssetActionRequest).where(AssetActionRequest.case_id == case.id))).all()
 
     if getattr(case.blockchain, "value", None) == "ethereum":
@@ -159,11 +152,7 @@ async def build_recommendations(db: AsyncSession, case: Case) -> list[dict]:
                 source="finding.severity + finding.confidence + finding references",
             ))
 
-    destination_attribution = next(
-        (item for item in attributions if destination and item.wallet_address == destination.address),
-        None,
-    )
-    destination_attribution_data = normalize_attribution(destination_attribution) if destination_attribution else normalize_attribution({})
+    destination_attribution_data = selection['attribution']
     if destination and destination_attribution_data["attribution_status"] in {"likely_inferred", "unknown"}:
         linked = _evidence_for(evidence, wallet=destination.address)
         if linked:

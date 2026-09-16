@@ -8,16 +8,15 @@ NOT a generic chatbot — only answers from structured case data.
 import logging
 from typing import Dict, Any, List, Optional
 import uuid
+import re
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.models.models import (
     Case, Transaction, Wallet, PatternFinding,
-    Evidence, RiskAssessment, VASPAttribution,
+    Evidence, RiskAssessment,
     AIConversation, FundFlow,
 )
-from app.core.config import settings
-from app.services.attribution_service import normalize_attribution
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +25,13 @@ class AIService:
     """
     Grounded AI Investigation Copilot.
     Generates case-specific answers from structured investigation data.
-    Falls back to structured analysis if no LLM API key is available.
+    Uses local structured analysis in every environment.
     """
 
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def query(self, case_id: str, question: str) -> Dict[str, Any]:
+    async def query(self, case_id: str, question: str, wallet_address=None, finding_id=None) -> Dict[str, Any]:
         """
         Process an investigator's question about a case.
         Uses structured case data to generate a grounded answer.
@@ -54,6 +53,9 @@ class AIService:
                 ],
             }
 
+        explicit_addresses = re.findall(r'0x[0-9a-fA-F]{40}\b', question)
+        context['selected_wallet'] = wallet_address or (explicit_addresses[0].lower() if explicit_addresses else None)
+        context['selected_finding'] = finding_id
         # Save user question
         user_msg = AIConversation(
             case_id=case_uuid,
@@ -74,12 +76,17 @@ class AIService:
         else:
             answer_data = self._generate_structured_answer(question, context)
 
+        intelligence = context.get('destination_intelligence') or {}
+        answer_data.update(run_id=context['run_id'], destination=context.get('destination'),
+            attribution_status=(intelligence.get('attribution') or {}).get('attribution_status', 'unknown'),
+            data_origin='demo' if context['case']['is_demo'] else 'observed', coverage=context.get('coverage'),
+            limitations=intelligence.get('limitations', []))
         # Save assistant response
         assistant_msg = AIConversation(
             case_id=case_uuid,
             role="assistant",
             content=answer_data["answer"],
-            grounding_context={"sources": answer_data.get("sources", [])},
+            grounding_context={"sources": answer_data.get("sources", []), 'run_id': context['run_id'], 'supporting_records': answer_data.get('supporting_records', [])},
         )
         self.db.add(assistant_msg)
 
@@ -94,7 +101,7 @@ class AIService:
             "bank account", "not in the case", "not in this case", "does not exist",
             "doesn't exist", "not observed", "outside this case", "invent a transaction",
             "make up a transaction", "after the last", "after the latest", "latest event",
-            "future transaction", "future event",
+            "future transaction", "future event", "freeze wallet", "freeze status", "government action", "frozen", "custody confirmed",
         )
         return any(marker in question_lower for marker in unsupported_markers)
 
@@ -126,7 +133,7 @@ class AIService:
             "why", "flag", "suspicious", "pattern", "reason", "support", "evidence",
             "intermediar", "wallet", "risk", "score", "vasp", "exchange", "attribute",
             "entity", "destination", "summary", "summarize", "overview", "report",
-            "what happened", "explain", "simple", "next", "investigate",
+            "what happened", "explain", "simple", "next", "investigate", "missing", "attribution",
         )
         return any(marker in question_lower for marker in supported_markers)
 
@@ -186,7 +193,7 @@ class AIService:
 
         # Fetch transactions
         tx_result = await self.db.execute(
-            select(Transaction).where(Transaction.case_id == case_uuid).limit(50)
+            select(Transaction).where(Transaction.case_id == case_uuid).order_by(Transaction.timestamp, Transaction.hash, Transaction.id)
         )
         transactions = tx_result.scalars().all()
 
@@ -208,12 +215,6 @@ class AIService:
         )
         risk_assessments = r_result.scalars().all()
 
-        # Fetch VASP
-        v_result = await self.db.execute(
-            select(VASPAttribution).where(VASPAttribution.case_id == case_uuid)
-        )
-        vasps = v_result.scalars().all()
-
         # Fetch fund flows
         ff_result = await self.db.execute(
             select(FundFlow)
@@ -222,6 +223,8 @@ class AIService:
         )
         from app.services.investigation_service import InvestigationService
         graph = await InvestigationService(self.db).get_graph_data(str(case_uuid))
+        from app.services.recommendation_service import build_recommendations
+        recommendations = await build_recommendations(self.db, case)
         route = graph["primary_path"]
         pairs = set(zip(route, route[1:]))
         fund_flows = [flow for flow in ff_result.scalars().all() if (flow.from_address, flow.to_address) in pairs]
@@ -230,6 +233,8 @@ class AIService:
             return None
 
         return {
+            'destination_intelligence': graph['destination_intelligence'],
+            'recommendations': recommendations,
             "destination": (await destination_context(self.db, case))["selected"],
             "coverage": (case.analysis_summary or {}).get("stats", {}).get("coverage"),
             "run_id": (case.analysis_summary or {}).get("run_id") or f"legacy:{case.id}",
@@ -268,7 +273,7 @@ class AIService:
                     "timestamp": t.timestamp.isoformat() if t.timestamp else None,
                     "hop": t.hop_number,
                 }
-                for t in transactions[:20]
+                for t in transactions
             ],
             "findings": [
                 {
@@ -279,6 +284,7 @@ class AIService:
                     "confidence": f.confidence,
                     "trigger": f.trigger,
                     "supporting_transactions": f.supporting_transaction_ids or [],
+                    'supporting_transfer_ids': (f.metadata_ or {}).get('supporting_transfer_ids', []),
                     "affected_wallets": f.affected_wallets or [],
                 }
                 for f in findings
@@ -286,6 +292,8 @@ class AIService:
             "evidence_count": len(evidence),
             "evidence": [
                 {
+                    'id': str(item.id),
+                    'transfer_id': (item.metadata_ or {}).get('transfer_id'),
                     "title": item.title,
                     "reason": item.reason,
                     "transaction_hash": item.transaction_hash,
@@ -305,12 +313,9 @@ class AIService:
             ],
             "vasp_attributions": [
                 {
-                    "wallet": v.wallet_address,
-                    "entity": normalize_attribution(v)["entity_name"],
-                    "confidence": normalize_attribution(v)["confidence"],
-                    "source": v.source,
+                    **v, "wallet": address, "entity": v['entity_name'],
                 }
-                for v in vasps
+                for address, v in (await destination_context(self.db, case))['attributions'].items()
             ],
             "fund_flow_path": [
                 {
@@ -326,272 +331,15 @@ class AIService:
         }
 
     async def _query_llm(self, question: str, context: Dict) -> Dict[str, Any]:
-        """Query LLM with structured case context."""
-        try:
-            from openai import AsyncOpenAI
-
-            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
-            system_prompt = (
-                "You are CryptoTrace AI Investigation Copilot. You ONLY answer questions "
-                "using the provided structured case data. You MUST NOT invent transaction hashes, "
-                "wallet addresses, amounts, timestamps, VASP ownership, evidence, or criminal identities. "
-                "If the data is insufficient to answer, say so clearly. "
-                "When attribution is uncertain, state the confidence level. "
-                "Distinguish between FACT (blockchain record), ANALYSIS (computed signals), "
-                "INFERENCE (reasonable interpretation), and your SUMMARY. "
-                "Be concise and professional. Reference specific transaction hashes and wallet "
-                "addresses from the data when possible."
-            )
-
-            context_str = self._format_context_for_llm(context)
-
-            response = await client.chat.completions.create(
-                model=settings.AI_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"CASE DATA:\n{context_str}\n\nQUESTION: {question}"},
-                ],
-                temperature=0.3,
-                max_tokens=1000,
-            )
-
-            answer = response.choices[0].message.content
-
-            return {
-                "answer": answer,
-                "grounded": True,
-                "sources": ["case_data", "investigation_analysis"],
-                "suggested_questions": self._get_suggested_questions(context),
-            }
-        except Exception:
-            logger.error("LLM query failed; falling back to structured analysis")
-            return self._generate_structured_answer(question, context)
+        """Compatibility entry point: always local, including configured environments."""
+        return self._generate_structured_answer(question, context)
 
     def _generate_structured_answer(self, question: str, context: Dict) -> Dict[str, Any]:
-        """
-        Generate structured answer without LLM.
-        Uses pattern matching on the question to select relevant context.
-        DEMO MODE: Clearly labeled as structured analysis, not AI generation.
-        """
-        question_lower = self._normalize_question(question)
-        answer_parts = []
-        sources = []
-
-        # Refuse requests that require identity, criminality, off-case data, or
-        # future facts. These are outside the structured evidence boundary.
         if self._is_unsupported_question(question):
             return self._unsupported_answer(context)
-
-        case = context.get("case", {})
-        answer_parts.append(f"**Case {case.get('case_number', 'N/A')}** — {case.get('title', 'Investigation')}")
-
-        if case.get("is_demo"):
-            answer_parts.append("\n*DEMO DATA: This response uses demonstration case records.*\n")
-
-        # Money trail questions
-        if any(kw in question_lower for kw in ["where", "money", "go", "trail", "flow", "path"]):
-            fund_flow = context.get("fund_flow_path", [])
-            if fund_flow:
-                answer_parts.append("**ANALYSIS — Primary money trail:**")
-                for step in fund_flow:
-                    answer_parts.append(
-                        f"  → {step['from'][:12]}... → {step['to'][:12]}... "
-                        f"({step.get('amount_exact') or ('approximately ' + str(step['amount']))} {step['asset']}, hop {step['hop']})"
-                    )
-                sources.append("fund_flow_analysis")
-            else:
-                answer_parts.append("Fund flow data is not yet available. Run the investigation first.")
-
-        # Why flagged questions
-        if any(kw in question_lower for kw in ["why", "flag", "suspicious", "reason"]):
-            findings = context.get("findings", [])
-            if findings:
-                answer_parts.append("**ANALYSIS — Suspicious patterns detected:**")
-                for f in findings:
-                    answer_parts.append(
-                        f"  • **{f['pattern']}** (severity: {f['severity']}, "
-                        f"confidence: {f['confidence']:.0%}): {f['description']}"
-                    )
-                sources.append("pattern_analysis")
-
-        # Transaction/evidence support questions
-        if any(kw in question_lower for kw in ["transaction", "support", "evidence"]):
-            evidence = context.get("evidence", [])
-            if evidence:
-                answer_parts.append("**FACT — Saved case evidence:**")
-                for item in evidence[:10]:
-                    reference = f" — transaction {item['transaction_hash']}" if item.get("transaction_hash") else ""
-                    answer_parts.append(f"  • {item['title']}{reference}")
-                sources.append("saved_evidence")
-            transactions = context.get("key_transactions", [])
-            if transactions:
-                answer_parts.append("**FACT — Observed supporting transactions:**")
-                for tx in transactions[:10]:
-                    answer_parts.append(
-                        f"  • {tx['hash']} — {tx['from'][:12]}... → {tx['to'][:12]}... "
-                        f"({tx.get('amount_exact') or ('approximately ' + str(tx['amount']))} {tx['asset']}, hop {tx['hop']})"
-                    )
-                sources.append("transaction_records")
-
-        # Intermediary questions
-        if any(kw in question_lower for kw in ["intermediar", "wallet", "important", "key"]):
-            wallets = context.get("wallets", [])
-            intermediaries = [w for w in wallets if w.get("is_intermediary")]
-            if intermediaries:
-                answer_parts.append("**ANALYSIS — Intermediary wallets:**")
-                for w in intermediaries:
-                    answer_parts.append(
-                        f"  • {w['address'][:12]}... — {w.get('label', 'Unknown')} "
-                        f"(received: {w['total_received']:.4f}, sent: {w['total_sent']:.4f})"
-                    )
-                sources.append("intermediary_analysis")
-
-        # Risk questions
-        if any(kw in question_lower for kw in ["risk", "score", "danger", "threat"]):
-            risks = context.get("risk_assessments", [])
-            high_risk = [r for r in risks if r["score"] >= 25]
-            if high_risk:
-                answer_parts.append("**ANALYSIS — Significant risk levels:**")
-                for r in sorted(high_risk, key=lambda x: x["score"], reverse=True):
-                    answer_parts.append(
-                        f"  • {r['wallet'][:12]}...: **{r['category'].upper()}** "
-                        f"(score: {r['score']}/100)"
-                    )
-                sources.append("risk_analysis")
-
-        # VASP / exchange questions
-        if any(kw in question_lower for kw in ["vasp", "exchange", "attribute", "entity", "destination"]):
-            vasps = context.get("vasp_attributions", [])
-            if vasps:
-                answer_parts.append("**INFERENCE — VASP attributions:**")
-                for v in vasps:
-                    answer_parts.append(
-                        f"  • {v['wallet'][:12]}...: {v['entity']} "
-                        f"(confidence: {v['confidence']}, source: {v['source']})"
-                    )
-                sources.append("vasp_attribution")
-
-        # Summary / general questions
-        if any(kw in question_lower for kw in ["summary", "summarize", "overview", "report", "what happened", "explain", "simple"]):
-            answer_parts.append("\n**AI SUMMARY — Investigation Summary:**")
-            answer_parts.append(f"  • Reported wallet: {case.get('reported_wallet', 'N/A')}")
-            answer_parts.append(f"  • Total wallets discovered: {len(context.get('wallets', []))}")
-            answer_parts.append(f"  • Total transactions traced: {context.get('transactions_count', 0)}")
-            answer_parts.append(f"  • Suspicious patterns: {len(context.get('findings', []))}")
-            answer_parts.append(f"  • Evidence items: {context.get('evidence_count', 0)}")
-
-            vasps = context.get("vasp_attributions", [])
-            if vasps:
-                answer_parts.append(f"  • Destination attribution: {vasps[0]['entity']} ({vasps[0]['confidence']})")
-            sources.append("case_summary")
-
-        if any(phrase in question_lower for phrase in ["what next", "next step", "investigate next", "should i investigate"]):
-            findings = sorted(
-                context.get("findings", []),
-                key=lambda item: (
-                    {"critical": 4, "high": 3, "medium": 2, "low": 1}.get(item.get("severity"), 0),
-                    item.get("confidence", 0),
-                ),
-                reverse=True,
-            )
-            if findings:
-                strongest = findings[0]
-                answer_parts.append("**ANALYSIS — Suggested next review:**")
-                answer_parts.append(
-                    f"  • Start with the highest-severity recorded pattern: {strongest['pattern']} "
-                    f"({strongest['severity']}, {strongest['confidence']:.0%} confidence)."
-                )
-                supporting = strongest.get("supporting_transactions", [])
-                affected = strongest.get("affected_wallets", [])
-                if supporting:
-                    answer_parts.append(f"  • Inspect supporting transaction {supporting[0]}.")
-                elif affected:
-                    answer_parts.append(f"  • Review the WHY explanation for wallet {affected[0]}.")
-                else:
-                    answer_parts.append("  • Review the finding details against the observed transaction trail.")
-                sources.append("pattern_analysis")
-            else:
-                answer_parts.append("No recorded finding is available to prioritize. Review the observed money trail first.")
-
-        # Default if no specific match
-        if len(answer_parts) <= 2:
-            answer_parts.append(
-                "I can explain the money trail, suspicious patterns, intermediary wallets, "
-                "risk levels, VASP attributions, saved evidence, or the next item to review."
-            )
-
-        answer = "\n".join(answer_parts)
-
-        return {
-            "answer": answer,
-            "grounded": True,
-            "sources": sources or ["case_data"],
-            "suggested_questions": self._get_suggested_questions(context),
-        }
+        from app.services.copilot_service import explain
+        return explain(question, context)
 
     def _get_suggested_questions(self, context: Dict) -> List[str]:
-        """Generate contextually relevant follow-up questions."""
-        return [
-            "Summarize this case.",
-            "Where did the money go?",
-            "Why was this wallet flagged?",
-            "What evidence supports this?",
-            "Which wallets are intermediaries?",
-            "What suspicious patterns were detected?",
-            "What should I investigate next?",
-        ]
-
-    def _format_context_for_llm(self, context: Dict) -> str:
-        """Format context as a concise string for LLM consumption."""
-        parts = []
-
-        case = context.get("case", {})
-        parts.append(f"Case: {case.get('case_number')} - {case.get('title')}")
-        parts.append(f"Reported Wallet: {case.get('reported_wallet')}")
-        parts.append(f"Blockchain: {case.get('blockchain')}")
-        if case.get("is_demo"):
-            parts.append("NOTE: This is DEMO DATA for demonstration purposes.")
-
-        parts.append(f"\nWallets discovered: {len(context.get('wallets', []))}")
-        parts.append(f"Transactions traced: {context.get('transactions_count', 0)}")
-
-        # Key findings
-        findings = context.get("findings", [])
-        if findings:
-            parts.append(f"\nSuspicious Patterns ({len(findings)}):")
-            for f in findings:
-                parts.append(
-                    f"  - {f['pattern']} ({f['severity']}, {f['confidence']:.0%}): "
-                    f"{f['description']}"
-                )
-
-        evidence = context.get("evidence", [])
-        if evidence:
-            parts.append(f"\nSaved Evidence ({len(evidence)}):")
-            for item in evidence[:10]:
-                reference = f"; transaction={item['transaction_hash']}" if item.get("transaction_hash") else ""
-                parts.append(f"  - {item['title']} (source={item['source']}{reference})")
-
-        # VASP
-        vasps = context.get("vasp_attributions", [])
-        if vasps:
-            parts.append("\nVASP Attributions:")
-            for v in vasps:
-                parts.append(f"  - {v['wallet']}: {v['entity']} ({v['confidence']})")
-
-        # Risk
-        risks = context.get("risk_assessments", [])
-        if risks:
-            parts.append("\nRisk Assessments:")
-            for r in sorted(risks, key=lambda x: x["score"], reverse=True)[:5]:
-                parts.append(f"  - {r['wallet']}: {r['category']} ({r['score']}/100)")
-
-        # Fund flow
-        fund_flow = context.get("fund_flow_path", [])
-        if fund_flow:
-            parts.append("\nPrimary Fund Flow:")
-            for step in fund_flow:
-                parts.append(f"  Hop {step['hop']}: {step['from']} → {step['to']} ({step.get('amount_exact') or ('approximately ' + str(step['amount']))} {step['asset']})")
-
-        return "\n".join(parts)
+        from app.services.copilot_service import QUESTIONS
+        return QUESTIONS

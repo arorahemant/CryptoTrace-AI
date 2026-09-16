@@ -342,14 +342,6 @@ class InvestigationService:
                 .order_by(RiskAssessment.wallet_address)
             )
         ).scalars().all()
-        vasp_rows = (
-            await self.db.execute(
-                select(VASPAttribution)
-                .where(VASPAttribution.case_id == case.id)
-                .order_by(VASPAttribution.wallet_address)
-            )
-        ).scalars().all()
-
         raw_wallets = {
             wallet.address: {
                 **(wallet.metadata_ or {}),
@@ -400,10 +392,7 @@ class InvestigationService:
         primary_path = self.graph_engine.get_primary_path(case.reported_wallet, selected["address"] if selected else None)
         intermediaries = self.graph_engine.get_intermediaries()
 
-        vasp_data = {
-            record.wallet_address: normalize_attribution(record)
-            for record in vasp_rows
-        }
+        vasp_data = destination['attributions']
         risk_results = {
             record.wallet_address: {
                 "wallet_address": record.wallet_address,
@@ -835,19 +824,15 @@ class InvestigationService:
             for r in risk_records
         }
 
-        vasp_result = await self.db.execute(
-            select(VASPAttribution).where(VASPAttribution.case_id == case.id)
-        )
-        vasp_records = vasp_result.scalars().all()
-        vasp_data = {
-            v.wallet_address: normalize_attribution(v)
-            for v in vasp_records
-        }
+        vasp_data = destination['attributions']
 
-        return {**self.graph_engine.serialize_for_frontend(
+        graph = {**self.graph_engine.serialize_for_frontend(
             primary_path=primary_path, vasp_data=vasp_data, risk_data=risk_data),
             "destination": selected, "destination_candidates": destination["candidates"],
             "run_id": (case.analysis_summary or {}).get("run_id") or f"legacy:{case.id}"}
+        from app.services.destination_service import destination_intelligence
+        graph['destination_intelligence'] = await destination_intelligence(self.db, case, graph)
+        return graph
 
     async def get_why_explanation(self, case_id: str, wallet_address: str) -> Dict[str, Any]:
         """Generate WHY? explanation for a specific wallet."""

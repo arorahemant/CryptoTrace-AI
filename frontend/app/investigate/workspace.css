@@ -127,3 +127,34 @@
 @media (prefers-reduced-motion: reduce) {
   .ct-investigation-shell * { animation: none !important; scroll-behavior: auto !important; transition: none !important; }
 }
+
+.intelligence-panel { background: #fff; color: #25333b; border: 1px solid #d4dce1; border-radius: 8px; padding: 14px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.intelligence-panel header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.intelligence-panel h3 { font-size: 14px; font-weight: 700; }
+.intelligence-panel h4 { font-weight: 650; margin: 12px 0 6px; }
+.intelligence-status { border: 1px solid #b6c3cb; padding: 3px 6px; border-radius: 4px; font-size: 10px; }
+.intelligence-origin { color: #425964; font-size: 10px; margin: 10px 0; }
+.intelligence-panel dl { display: grid; grid-template-columns: minmax(95px, 1fr) minmax(0, 2fr); gap: 7px 12px; }
+.intelligence-panel dt { color: #52626d; }
+.intelligence-panel dd { margin: 0; }
+.intelligence-panel button { min-height: 36px; text-align: left; color: #245b65; }
+.intelligence-panel button:disabled { opacity: .55; cursor: not-allowed; }
+.intelligence-panel :is(button, input, summary):focus-visible { outline: 2px solid #245b65; outline-offset: 3px; }
+.intelligence-panel details { margin-top: 12px; border-top: 1px solid #e1e6e9; padding-top: 9px; }
+.intelligence-panel summary { cursor: pointer; font-weight: 600; min-height: 32px; }
+.intelligence-panel ul { padding-left: 16px; }
+.intelligence-panel .intelligence-records { max-height: 250px; overflow-y: auto; padding: 0; list-style: none; }
+.intelligence-records li { border-bottom: 1px solid #e8edef; }
+.intelligence-records button { padding: 7px 2px; width: 100%; }
+.intelligence-records span { font-size: 10px; text-transform: uppercase; margin-right: 5px; color: #52626d; }
+.intelligence-records small { display: block; color: #52626d; font-family: monospace; }
+.intelligence-address { font-family: monospace; word-break: break-all; }
+.intelligence-chain { border-left: 2px solid #8aa9a9; padding-left: 9px; margin: 8px 0; }
+.copilot-panel { margin: 12px; }
+.copilot-questions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
+.copilot-questions button { border: 1px solid #c9d5da; border-radius: 5px; padding: 8px; }
+.copilot-panel form label { display: block; margin-bottom: 6px; font-weight: 600; }
+.copilot-panel form > div { display: flex; gap: 6px; }
+.copilot-panel input { min-width: 0; flex: 1; background: white; color: #25333b; border: 1px solid #aabac4; padding: 8px; border-radius: 5px; }
+.copilot-panel form button { padding: 6px 12px; border: 1px solid #aabac4; border-radius: 5px; }
+@media (max-width: 600px) { .copilot-questions { grid-template-columns: 1fr; } .intelligence-panel dl { grid-template-columns: 1fr; gap: 3px; } .intelligence-panel dd { margin-bottom: 6px; } }

@@ -115,6 +115,62 @@ test('coverage keeps failed attempts and non-exhausted historical bounds explici
 const highActivity = JSON.parse(readFileSync(new URL('../../backend/tests/fixtures/high_activity_alchemy.json', import.meta.url)));
 const observedGraph = highActivity.graph;
 const { default: Network3D } = component('Network3D');
+const { DestinationIntelligencePanel, CopilotPanel, ActionReadinessSummary } = component('IntelligencePanels');
+const highIntelligence = {
+  run_id: observedGraph.run_id, network: 'ethereum', data_origin: 'observed', candidate: observedGraph.destination,
+  attribution: { attribution_status: 'unknown', entity_name: null, reasoning: 'Attribution is unavailable or insufficiently supported.', source: 'unknown', provenance: 'unknown', source_reference: null, supporting_evidence_ids: [], supporting_transaction_hashes: [] },
+  selection_basis: 'Current bounded observation', supporting_path: observedGraph.primary_path,
+  supporting_transfers: observedGraph.edges.filter(e => e.target === observedGraph.destination.address), evidence: [], findings: [],
+  observation_provider: 'alchemy_ethereum', external_attribution_provider: 'not_connected', verified_at: null, freshness: 'unknown',
+  retrieved_at: highActivity.capability.coverage.retrieved_at, coverage: highActivity.capability.coverage, limitations: ['Observed connections do not establish ownership.'],
+};
+
+test('destination intelligence presents real partial observations with unknown attribution', () => {
+  const html = renderToStaticMarkup(React.createElement(DestinationIntelligencePanel, { data: highIntelligence, onSelect: noop }));
+  for (const label of ['PROVIDER-OBSERVED DATA', 'PARTIAL', 'UNKNOWN', 'NOT CONNECTED', 'NOT AVAILABLE', observedGraph.destination.address]) assert.ok(html.includes(label));
+  assert.ok(!html.includes('VERIFIED'));
+  assert.ok(!html.includes('Freeze Wallet'));
+});
+
+test('attribution labels remain distinct and untrusted source text is escaped', () => {
+  for (const [status, label] of [['known_verified', 'VERIFIED'], ['likely_inferred', 'LIKELY / INFERRED'], ['unknown', 'UNKNOWN']]) {
+    const data = { ...highIntelligence, data_origin: 'demo', attribution: { ...highIntelligence.attribution, attribution_status: status, entity_name: status === 'unknown' ? null : '<img src=x onerror=alert(1)>' } };
+    const html = renderToStaticMarkup(React.createElement(DestinationIntelligencePanel, { data, onSelect: noop }));
+    assert.ok(html.includes(label) && html.includes('DEMO DATA'));
+    assert.ok(!html.includes('<img'));
+    if (status === 'likely_inferred') assert.ok(!html.includes('>VERIFIED<'));
+  }
+});
+
+function buttonsIn(element) {
+  if (!element || typeof element !== 'object') return [];
+  if (Array.isArray(element)) return element.flatMap(buttonsIn);
+  if (typeof element.type === 'function') return buttonsIn(element.type(element.props));
+  return [...(element.type === 'button' ? [element] : []), ...buttonsIn(element.props?.children)];
+}
+
+test('Copilot retains each of 62 actual event links and invokes the existing selection callback', () => {
+  const selected = [];
+  const records = observedGraph.edges.map(e => ({ kind: 'transfer', id: e.id, label: e.amount_exact, source: 'alchemy_ethereum' }));
+  const answer = { answer: 'Observed records', sections: [{ title: 'Observed records', items: ['62 transfer events'] }], supporting_records: records, sources: ['persisted_case_run'], limitations: ['Partial observation'], data_origin: 'observed', attribution_status: 'unknown', run_id: observedGraph.run_id, coverage: highActivity.capability.coverage, next_review_step: 'Review transfer evidence and coverage' };
+  const props = { answer, question: 'Supporting transfers', input: '', loading: false, disabled: false, contextLabel: 'Current case', onInput: noop, onAsk: noop, onSelect: r => selected.push(r.id) };
+  const element = React.createElement(CopilotPanel, props);
+  const html = renderToStaticMarkup(element);
+  for (const label of ['Answer', 'Key evidence (0)', 'Supporting transfers (62)', 'Next review step', 'Sources &amp; limitations', 'PARTIAL']) assert.ok(html.includes(label));
+  for (const button of buttonsIn(element).filter(b => b.props.title && records.some(r => r.id === b.props.title))) button.props.onClick();
+  assert.deepEqual(new Set(selected), new Set(records.map(r => r.id)));
+});
+
+test('action readiness distinguishes local package preparation from real external action', () => {
+  const shared = { evidenceCount: 62, transferCount: 4, candidate: observedGraph.destination.address, attribution: 'unknown', dataOrigin: 'observed', onEvidence: noop, onAudit: noop };
+  const html = renderToStaticMarkup(React.createElement(ActionReadinessSummary, { ...shared, ready: false, isDemo: false }));
+  for (const text of ['REQUIRED', 'NOT READY', 'external action unavailable', 'View evidence', 'View audit']) assert.ok(html.includes(text));
+  assert.ok(!html.includes('Freeze Wallet'));
+  const demo = renderToStaticMarkup(React.createElement(ActionReadinessSummary, { ...shared, ready: true, isDemo: true, dataOrigin: 'demo' }));
+  assert.ok(demo.includes('DEMO DATA') && demo.includes('READY FOR LOCAL PREPARATION'));
+  const unavailable = renderToStaticMarkup(React.createElement(ActionReadinessSummary, { ...shared, ready: false, isDemo: false, dataOrigin: 'none', evidenceCount: 0, transferCount: 0, candidate: null }));
+  assert.ok(unavailable.includes('NO OBSERVED DATA') && !unavailable.includes('PROVIDER-OBSERVED DATA'));
+});
 
 test('all 62 captured addresses fit inside the initial 3D viewport', () => {
   const html = renderToStaticMarkup(React.createElement(Network3D, { graph: observedGraph, path: selectedPath(observedGraph, null), isolate: false, selection: null, focus: 0, onWallet: noop, onTransfer: noop }));

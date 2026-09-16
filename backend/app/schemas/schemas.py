@@ -711,9 +711,20 @@ class ReplayResponse(BaseModel):
 
 class AIQueryRequest(BaseModel):
     question: str = Field(..., min_length=5, max_length=1000)
+    wallet_address: Optional[str] = Field(None, max_length=255)
+    finding_id: Optional[str] = Field(None, max_length=255)
 
 
 class AIQueryResponse(BaseModel):
+    next_review_step: Optional[str] = None
+    run_id: Optional[str] = None
+    destination: Optional[dict] = None
+    attribution_status: str = 'unknown'
+    data_origin: str = 'none'
+    coverage: Optional[dict] = None
+    sections: List[dict] = Field(default_factory=list)
+    supporting_records: List[dict] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
     output_kind: Literal["deterministic_explanation"] = "deterministic_explanation"
     capability: CapabilityState
     answer: str

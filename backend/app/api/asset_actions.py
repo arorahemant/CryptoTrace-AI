@@ -14,13 +14,12 @@ from app.core.database import get_db
 from app.core.capabilities import capability_payload
 from app.models.models import (
     AssetActionRequest, AssetActionStatus, AssetActionType, Case, Evidence,
-    PatternFinding, Transaction, User, VASPAttribution, Wallet,
+    PatternFinding, Transaction, User, Wallet,
 )
 from app.schemas.schemas import (
     AssetActionReadiness, AssetActionRequestCreate, AssetActionRequestResponse,
     AssetActionStatusSchema, AssetActionStatusUpdate,
 )
-from app.services.attribution_service import normalize_attribution
 from app.services.destination_service import destination_context
 from app.core.transfers import record_fields
 
@@ -50,7 +49,6 @@ async def _case_context(db: AsyncSession, case: Case) -> dict:
     selected = selection["selected"]
     destination = await db.scalar(select(Wallet).where(Wallet.case_id == case.id, Wallet.address == selected["address"])) if selected else None
     transactions = []
-    attribution = None
     findings = []
     evidence = []
     if destination:
@@ -63,14 +61,6 @@ async def _case_context(db: AsyncSession, case: Case) -> dict:
             .order_by(Transaction.timestamp.desc(), Transaction.hash, Transaction.id)
         )
         transactions = tx_result.scalars().all()
-        attribution = await db.scalar(
-            select(VASPAttribution)
-            .where(
-                VASPAttribution.case_id == case.id,
-                VASPAttribution.wallet_address == destination.address,
-            )
-            .order_by(VASPAttribution.created_at.desc())
-        )
     findings = (await db.scalars(select(PatternFinding).where(PatternFinding.case_id == case.id))).all()
     evidence = (await db.scalars(select(Evidence).where(Evidence.case_id == case.id))).all()
     if getattr(case.blockchain, "value", None) == "ethereum":
@@ -94,15 +84,15 @@ async def _case_context(db: AsyncSession, case: Case) -> dict:
             or (supporting_finding and item.finding_id == supporting_finding.id)
         )
     ]
-    normalized_attribution = normalize_attribution(attribution) if attribution else normalize_attribution({})
+    normalized_attribution = selection['attribution']
     has_attribution = normalized_attribution["attribution_status"] != "unknown"
     checks = [
-        {"key": "destination_identified", "label": "Destination identified", "complete": bool(selected and selected["kind"] != "not_expanded")},
+        {"key": "destination_identified", "label": "Destination candidate identified", "complete": bool(selected and selected["kind"] != "not_expanded")},
         {"key": "supporting_transaction", "label": "Supporting transaction identified", "complete": latest is not None},
         {"key": "supporting_finding", "label": "Supporting finding exists", "complete": supporting_finding is not None},
-        {"key": "evidence_available", "label": "Evidence available", "complete": bool(relevant_evidence)},
+        {"key": "evidence_available", "label": "Evidence preserved", "complete": bool(relevant_evidence)},
         {"key": "asset_amount_available", "label": "Observed asset and amount available", "complete": bool(latest and latest.asset and latest.amount is not None)},
-        {"key": "attribution_available", "label": "Attribution available", "complete": has_attribution},
+        {"key": "attribution_available", "label": "Attribution documented; review required" if normalized_attribution['attribution_status'] != 'known_verified' else "Verified attribution documented", "complete": has_attribution},
     ]
     if getattr(case.blockchain, "value", None) == "ethereum":
         checks.append({"key": "external_action_unavailable", "label": "External action is not supported by blockchain observations", "complete": False})
