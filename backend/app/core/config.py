@@ -69,6 +69,7 @@ class Settings(BaseSettings):
 
     # Blockchain Providers
     ALCHEMY_API_KEY: Optional[SecretStr] = Field(default=None, exclude=True, repr=False)
+    ALCHEMY_STARTUP_DIAGNOSTIC: bool = False
     ETHERSCAN_API_KEY: Optional[str] = None
     BLOCKCHAIN_RPC_URL: Optional[str] = None
 

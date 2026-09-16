@@ -2,8 +2,9 @@
 CryptoTrace AI - Main FastAPI Application
 Entry point for the backend API server.
 """
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -20,6 +21,7 @@ from app.api.recommendations import router as recommendations_router
 from app.api.public_cases import router as public_cases_router
 from app.api.diagnostics import router as diagnostics_router
 from app.models.models import ReporterAccount, User, UserRole
+from app.services.alchemy_diagnostic import empty_startup_summary, startup_alchemy_summary
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -107,11 +109,25 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"✅ CryptoTrace AI Backend ready (Demo Mode: {settings.DEMO_MODE})")
 
-    yield
+    app.state.alchemy_diagnostic = empty_startup_summary(settings.ALCHEMY_STARTUP_DIAGNOSTIC)
+    diagnostic_task = (
+        asyncio.create_task(_cache_startup_alchemy_diagnostic(app))
+        if settings.ALCHEMY_STARTUP_DIAGNOSTIC else None
+    )
+    try:
+        yield
+    finally:
+        if diagnostic_task is not None:
+            diagnostic_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await diagnostic_task
+        # Shutdown
+        await engine.dispose()
+        logger.info("👋 CryptoTrace AI Backend shutting down")
 
-    # Shutdown
-    await engine.dispose()
-    logger.info("👋 CryptoTrace AI Backend shutting down")
+
+async def _cache_startup_alchemy_diagnostic(application: FastAPI) -> None:
+    application.state.alchemy_diagnostic = await startup_alchemy_summary()
 
 
 app = FastAPI(
@@ -120,6 +136,7 @@ app = FastAPI(
     description="Real-Time Identification of Fraud-Linked Cryptocurrency Exchanges from Victim-Reported Suspect Wallet Addresses",
     lifespan=lifespan,
 )
+app.state.alchemy_diagnostic = empty_startup_summary(settings.ALCHEMY_STARTUP_DIAGNOSTIC)
 
 
 @app.exception_handler(OperationalError)
@@ -161,6 +178,7 @@ async def health_check():
         "demo_mode": settings.DEMO_MODE,
         "demo_login_available": settings.demo_accounts_allowed,
         "live_provider_available": bool(settings.ALCHEMY_API_KEY and settings.ALCHEMY_API_KEY.get_secret_value()),
+        "alchemy_diagnostic": app.state.alchemy_diagnostic.copy(),
     }
 
 
