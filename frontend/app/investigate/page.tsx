@@ -17,7 +17,7 @@ import { ReplayBar } from '@/components/investigation/ReplayBar';
 import {
   Shield, Search, Play,
   AlertTriangle, Eye, FileText, MessageSquare, ChevronLeft,
-  Loader2,
+  Loader2, ChevronDown, ChevronUp, ChevronRight, MoreHorizontal, Maximize2, Minimize2,
   Bookmark, ArrowRight, ClipboardList, XCircle
 } from 'lucide-react';
 import { ReactFlowProvider } from 'reactflow';
@@ -204,7 +204,31 @@ function InvestigateContent() {
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
   const [investigating, setInvestigating] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, updateActiveTab] = useState('overview');
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [graphFocus, setGraphFocus] = useState(false);
+  const [focusInspectorOpen, setFocusInspectorOpen] = useState(false);
+  const focusButton = useRef<HTMLButtonElement>(null);
+  const inspectorButton = useRef<HTMLButtonElement>(null);
+  const inspectorVisible = graphFocus ? focusInspectorOpen : inspectorOpen;
+  const setActiveTab = useCallback((tab: string) => {
+    updateActiveTab(tab);
+    if (graphFocus) setFocusInspectorOpen(true);
+    else setInspectorOpen(true);
+  }, [graphFocus]);
+
+  useEffect(() => {
+    if (!graphFocus) return;
+    const exitOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setGraphFocus(false);
+      focusButton.current?.focus();
+    };
+    window.addEventListener('keydown', exitOnEscape);
+    return () => window.removeEventListener('keydown', exitOnEscape);
+  }, [graphFocus]);
   const [selectedNode, setSelectedNode] = useState<GraphNodeData | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionData | null>(null);
   const [showMoneyTrail, setShowMoneyTrail] = useState(false);
@@ -647,7 +671,7 @@ function InvestigateContent() {
     setSelectedTransaction(transaction); setSelectedNode(null); setSelectedFinding(null);
     setSelection({ wallets: [transaction.from_address, transaction.to_address], transfers: [transaction.transfer_id || id], label: 'Selected transfer' });
     setActiveTab('transactions');
-  }, [transactions]);
+  }, [transactions, setActiveTab]);
 
   const selectWallet = useCallback((address: string) => {
     const wallet = graphNodeData.current[address];
@@ -655,7 +679,7 @@ function InvestigateContent() {
     setSelectedNode(wallet); setSelectedTransaction(null); setSelectedFinding(null); setWhyData(null);
     setSelection({ wallets: [address], transfers: [], label: 'Selected wallet' });
     setActiveTab('overview');
-  }, []);
+  }, [setActiveTab]);
 
   const openIntelligenceRecord = (record: RecordReference) => {
     if (record.kind === 'wallet') selectWallet(record.id);
@@ -756,7 +780,7 @@ function InvestigateContent() {
   const primaryPath = investigation?.primary_path || investigation?.graph?.primary_path || [];
   const destinationNode = nodes.find((node) => node.id === investigation?.graph?.destination?.address)?.data;
   return (
-    <main id="main-content" className="ct-investigation-shell flex h-screen flex-col overflow-hidden bg-[var(--ct-surface)]">
+    <main id="main-content" className={`ct-investigation-shell flex h-screen flex-col overflow-hidden bg-[var(--ct-surface)]${graphFocus ? ' ct-graph-focus' : ''}`}>
       <h1 className="sr-only">Investigation for case {caseData.case_number}</h1>
       {/* ─── Top Bar ────────────────────────────────────────── */}
       <header className="ct-investigation-header h-12 border-b border-[var(--ct-outline-variant)] bg-white/96 backdrop-blur-sm flex items-center px-4 justify-between shrink-0">
@@ -795,6 +819,38 @@ function InvestigateContent() {
         </div>
       </header>
 
+      {/* Keep layout controls outside every collapsible/scrolling panel and graph-result branch. */}
+      <div className="workspace-layout-controls" role="group" aria-label="Workspace layout">
+        <button type="button" aria-expanded={!graphFocus && !sidebarCollapsed} aria-controls="workspace-navigation" onClick={() => {
+          if (graphFocus) { setGraphFocus(false); setSidebarCollapsed(false); }
+          else setSidebarCollapsed(value => !value);
+        }}>
+          {graphFocus || sidebarCollapsed ? <ChevronRight /> : <ChevronLeft />}
+          <span>{graphFocus || sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}</span>
+        </button>
+        <button type="button" aria-expanded={!graphFocus && summaryExpanded} aria-controls="case-summary-details" onClick={() => {
+          if (graphFocus) { setGraphFocus(false); setSummaryExpanded(true); }
+          else setSummaryExpanded(value => !value);
+        }}>
+          {graphFocus || !summaryExpanded ? <ChevronDown /> : <ChevronUp />}
+          <span>Case Summary: {graphFocus || !summaryExpanded ? 'Expand' : 'Collapse'}</span>
+        </button>
+        <button ref={inspectorButton} type="button" aria-expanded={inspectorVisible} aria-controls="investigation-inspector" onClick={() => {
+          if (graphFocus) setFocusInspectorOpen(value => !value);
+          else setInspectorOpen(value => !value);
+        }}>
+          {inspectorVisible ? <ChevronRight /> : <ChevronLeft />}
+          <span>{inspectorVisible ? 'Collapse Inspector' : 'Open Inspector'}</span>
+        </button>
+        <button ref={focusButton} type="button" className="graph-focus-toggle" aria-pressed={graphFocus} onClick={() => {
+          setFocusInspectorOpen(false);
+          setGraphFocus(value => !value);
+        }}>
+          {graphFocus ? <Minimize2 /> : <Maximize2 />}
+          <span>{graphFocus ? 'Exit Focus (Esc)' : 'Graph Focus'}</span>
+        </button>
+      </div>
+
       {actionError && (
         <div role="alert" className="flex items-center justify-between gap-3 border-b border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-200 shrink-0">
           <span>{actionError}</span>
@@ -804,9 +860,10 @@ function InvestigateContent() {
         </div>
       )}
 
-      <div className="investigation-context">
-        <CoverageStrip capability={caseData.capability} />
-        <section className="case-brief" aria-label="Case summary">
+      <div id="investigation-context" className="investigation-context" hidden={graphFocus || !summaryExpanded}>
+        <div id="case-summary-details">
+          <CoverageStrip capability={caseData.capability} />
+          <section className="case-brief" aria-label="Case summary">
           <div><span>Case {caseData.case_number}</span><strong>{caseData.lifecycle === 'closed' ? 'Closed' : caseData.status.replaceAll('_', ' ')}</strong><small>{!canMutate ? 'Read-only' : 'Investigator workspace'}</small></div>
           <div><span>Network / risk</span><strong>{caseData.blockchain === 'ethereum' ? 'Ethereum Mainnet' : caseData.blockchain === 'demo' ? 'Demo Network' : caseData.blockchain}</strong><small>{riskCategory} RISK</small></div>
           <button onClick={() => selectWallet(caseData.reported_wallet)} disabled={!hasInvestigation}><span>Reported wallet</span><strong className="font-mono" title={caseData.reported_wallet}>{shortAddress(caseData.reported_wallet)}</strong><small>Investigation origin</small></button>
@@ -814,8 +871,8 @@ function InvestigateContent() {
           <button onClick={() => setActiveTab('transactions')}><span>Observed scope</span><strong>{transactions.length} transfers</strong><small>{investigation?.graph.nodes.length || 0} addresses</small></button>
           <button onClick={() => setActiveTab('findings')}><span>Key findings</span><strong>{findings.length}</strong><small>{caseData.blockchain === 'ethereum' ? 'Risk interpretation unavailable' : strongestFinding?.pattern_name || 'None recorded'}</small></button>
           <button onClick={() => setActiveTab('recommendations')}><span>Next action</span><strong>{recommendations.length ? 'Review recommendation' : 'Review coverage'}</strong><small>{recommendations[0]?.title || 'Check observation boundaries'}</small></button>
-        </section>
-        <details className="observation-controls">
+          </section>
+          <details className="observation-controls">
           <summary>{caseData.blockchain === 'ethereum' ? 'Observation interval & case controls' : 'Case controls'}</summary>
           {caseData.blockchain === 'ethereum' && <div className="observation-form">
             <label>Historical start block<input aria-label="Historical start block" inputMode="numeric" value={fromBlock} onChange={e => setFromBlock(e.target.value)} placeholder="Required" /></label>
@@ -827,16 +884,23 @@ function InvestigateContent() {
             if (!window.confirm('Close this case? Processing results do not establish recovery or external action.')) return;
             try { await api.closeCase(caseId); await loadCase(); } catch (err) { setActionError(err instanceof Error ? err.message : 'Unable to close case'); }
           }}>Close case</button>}
-        </details>
+          </details>
+        </div>
       </div>
 
       {/* ─── Main Content      {/* ─── Main Content ──────────────────────────────────── */}
       <div className="ct-investigation-main flex flex-1 overflow-hidden">
         {/* ─── Left Panel ──────────────────────────────────── */}
-        <div className="ct-investigation-nav w-56 border-r border-[var(--ct-outline-variant)] bg-white flex flex-col shrink-0 overflow-y-auto">
-          <nav className="hidden p-3 md:block" aria-label="Case workspace">
-            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Workspace</div>
-            <button type="button" onClick={() => router.push('/dashboard')} className="mb-0.5 flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-xs text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)]"><ChevronLeft className="h-3.5 w-3.5" /><span>Dashboard / cases</span></button>
+        <div id="workspace-navigation" hidden={graphFocus} className={`ct-investigation-nav w-56 border-r border-[var(--ct-outline-variant)] bg-white flex flex-col shrink-0${sidebarCollapsed ? ' is-collapsed' : ''}`}>
+          <header className="workspace-sidebar-header">
+            <span>Workspace</span>
+            <button type="button" aria-expanded={!sidebarCollapsed} aria-controls="workspace-navigation" onClick={() => setSidebarCollapsed(value => !value)} title={sidebarCollapsed ? 'Expand workspace sidebar' : 'Collapse workspace sidebar'} aria-label={sidebarCollapsed ? 'Expand workspace sidebar' : 'Collapse workspace sidebar'}>
+              {sidebarCollapsed ? <ChevronRight /> : <ChevronLeft />}
+              {!sidebarCollapsed && <span>Collapse</span>}
+            </button>
+          </header>
+          <nav className="desktop-workspace-nav hidden p-3 md:block" aria-label="Case workspace">
+            <button type="button" onClick={() => router.push('/dashboard')} aria-label="Dashboard / cases" title="Dashboard / cases" className="mb-0.5 flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-xs text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)]"><ChevronLeft className="h-3.5 w-3.5" /><span>Dashboard / cases</span></button>
             {[
               { id: 'overview', icon: Eye, label: 'Investigation' },
               { id: 'recommendations', icon: ClipboardList, label: 'Next actions', count: recommendations.length },
@@ -845,10 +909,10 @@ function InvestigateContent() {
               { id: 'report', icon: FileText, label: 'Reports' },
               { id: 'ai', icon: MessageSquare, label: 'Copilot' },
             ].map((tab) => (
-              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} aria-pressed={activeTab === tab.id} className={`mb-0.5 flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-xs ${activeTab === tab.id ? 'border border-[#8aa9a9] bg-[var(--ct-primary-container)] text-[var(--ct-primary)]' : 'text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)] hover:text-[var(--ct-ink)]'}`}><tab.icon className="h-3.5 w-3.5" /><span className="flex-1 text-left">{tab.label}</span>{'count' in tab && tab.count != null && tab.count > 0 && <span className="rounded-full bg-[var(--ct-surface-high)] px-1.5 py-0.5 text-[10px]">{tab.count}</span>}</button>
+              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} aria-label={tab.label} title={tab.label} aria-pressed={activeTab === tab.id} className={`mb-0.5 flex min-h-10 w-full items-center gap-2 rounded px-3 py-2 text-xs ${activeTab === tab.id ? 'border border-[#8aa9a9] bg-[var(--ct-primary-container)] text-[var(--ct-primary)]' : 'text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)] hover:text-[var(--ct-ink)]'}`}><tab.icon className="h-3.5 w-3.5" /><span className="flex-1 text-left">{tab.label}</span>{'count' in tab && tab.count != null && tab.count > 0 && <span className="rounded-full bg-[var(--ct-surface-high)] px-1.5 py-0.5 text-[10px]">{tab.count}</span>}</button>
             ))}
             <details className="mt-1 border-t border-[var(--ct-outline-variant)] pt-2">
-              <summary className="flex min-h-10 cursor-pointer items-center rounded px-3 py-2 text-xs font-semibold text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)]">More tools</summary>
+              <summary onClick={() => setSidebarCollapsed(false)} title="More tools" aria-label="More tools" className="flex min-h-10 cursor-pointer items-center gap-2 rounded px-3 py-2 text-xs font-semibold text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)]"><MoreHorizontal className="h-3.5 w-3.5" /><span>More tools</span></summary>
               <div className="mt-1 space-y-0.5 pl-2">
                 {[{ id: 'findings', label: 'All findings' }, { id: 'wallets', label: 'Wallets' }, { id: 'transactions', label: 'Transactions' }, { id: 'timeline', label: 'Replay' }, { id: 'audit', label: 'Audit' }].map((tab) => <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className="flex min-h-10 w-full items-center rounded px-3 text-left text-[11px] text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)]">{tab.label}</button>)}
                 <button type="button" onClick={() => router.push('/settings')} className="flex min-h-10 w-full items-center rounded px-3 text-left text-[11px] text-[var(--ct-ink-muted)] hover:bg-[var(--ct-surface-high)]">Settings</button>
@@ -858,13 +922,13 @@ function InvestigateContent() {
 
           <div className="ct-mobile-investigation-nav p-2 md:hidden" aria-label="Investigation tools">
             <div className="grid grid-cols-4 gap-1">
-              <button type="button" onClick={() => router.push('/dashboard')} className="flex min-h-12 flex-col items-center justify-center gap-1 rounded px-1 text-[9px] font-semibold text-[var(--ct-ink-muted)]"><ChevronLeft className="h-4 w-4" /><span>Home</span></button>
+              <button type="button" onClick={() => router.push('/dashboard')} aria-label="Dashboard / cases" title="Dashboard / cases" className="flex min-h-12 flex-col items-center justify-center gap-1 rounded px-1 text-[9px] font-semibold text-[var(--ct-ink-muted)]"><ChevronLeft className="h-4 w-4" /><span>Home</span></button>
               {[
                 { id: 'overview', label: 'Investigation', icon: Eye },
                 { id: 'action', label: 'Readiness', icon: Shield },
                 { id: 'evidence', label: 'Evidence', icon: Bookmark },
               ].map((tab) => (
-                <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} aria-pressed={activeTab === tab.id} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded px-1 text-[9px] font-semibold ${activeTab === tab.id ? 'bg-[var(--ct-primary-container)] text-[var(--ct-primary)]' : 'text-[var(--ct-ink-muted)]'}`}>
+                <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} aria-label={tab.label} title={tab.label} aria-pressed={activeTab === tab.id} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded px-1 text-[9px] font-semibold ${activeTab === tab.id ? 'bg-[var(--ct-primary-container)] text-[var(--ct-primary)]' : 'text-[var(--ct-ink-muted)]'}`}>
                   <tab.icon className="h-4 w-4" /><span>{tab.label}</span>
                 </button>
               ))}
@@ -883,7 +947,7 @@ function InvestigateContent() {
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2">{investigating ? 'Observing the selected interval' : caseData.capability.processing_state === 'failed' ? 'Observation attempt failed' : caseData.capability.result_state === 'empty' ? 'No records observed' : 'Ready to investigate'}</h3>
                 <p className="text-slate-400 text-sm mb-1">Wallet: <span className="font-mono text-blue-400">{caseData?.reported_wallet}</span></p>
-                <p className="text-slate-500 text-xs mb-6">{caseData.blockchain === 'demo' ? 'Run demonstration analysis on synthetic transactions.' : caseData.capability.result_state === 'empty' ? 'No matching records in this interval. This does not mean no wallet activity.' : 'Choose a historical interval in Observation controls above.'}</p>
+                <p className="text-slate-500 text-xs mb-6">{caseData.blockchain === 'demo' ? 'Run demonstration analysis on synthetic transactions.' : caseData.capability.result_state === 'empty' ? 'No matching records in this interval. This does not mean no wallet activity.' : 'Expand Case summary to choose a historical interval in Observation controls.'}</p>
                 <button
                   onClick={runInvestigation}
                   disabled={!canMutate || investigating || !analysisAvailable}
@@ -916,8 +980,15 @@ function InvestigateContent() {
         </div>
 
         {/* ─── Right Panel ─────────────────────────────────── */}
-        <div aria-label="Investigation inspector" className="ct-investigation-inspector w-80 border-l border-[var(--ct-outline-variant)] bg-white overflow-y-auto shrink-0">
-          <div className="inspector-location"><strong>{activeTab === 'ai' ? 'Investigation Copilot' : activeTab === 'overview' ? 'Case / selected wallet' : activeTab.replaceAll('_', ' ')}</strong><span title={caseData.capability.run_id || undefined}>Run {caseData.capability.run_id?.slice(0, 8) || 'not started'}</span></div>
+        <div className="ct-inspector-rail" hidden={inspectorVisible} aria-label="Collapsed investigation inspector">
+          <button type="button" aria-expanded="false" aria-controls="investigation-inspector" onClick={() => graphFocus ? setFocusInspectorOpen(true) : setInspectorOpen(true)} title="Expand Case / Selected Wallet inspector" aria-label="Expand Case / Selected Wallet inspector"><ChevronLeft /><span>Open Inspector</span></button>
+        </div>
+        <div id="investigation-inspector" hidden={!inspectorVisible} aria-label="Investigation inspector" className="ct-investigation-inspector w-80 border-l border-[var(--ct-outline-variant)] bg-white overflow-y-auto shrink-0">
+          <div className="inspector-location"><strong>{activeTab === 'ai' ? 'Investigation Copilot' : activeTab === 'overview' ? 'Case / selected wallet' : activeTab.replaceAll('_', ' ')}</strong><span title={caseData.capability.run_id || undefined}>Run {caseData.capability.run_id?.slice(0, 8) || 'not started'}</span><button type="button" className="inspector-collapse-button" aria-label="Collapse Case / Selected Wallet inspector" title="Collapse Case / Selected Wallet inspector" onClick={() => {
+            if (graphFocus) setFocusInspectorOpen(false);
+            else setInspectorOpen(false);
+            requestAnimationFrame(() => inspectorButton.current?.focus());
+          }}><span>Collapse</span><ChevronRight /></button></div>
           {recordFilter && ['transactions', 'evidence'].includes(activeTab) && <div className="trail-notice">Wallet: {shortAddress(recordFilter)} <button onClick={() => setRecordFilter('')}>Clear filter</button></div>}
           {replayStep >= 0 && replayEvents[replayStep] && (
             <div className="p-3 border-b border-cyan-500/20 bg-cyan-500/5">

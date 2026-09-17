@@ -102,15 +102,7 @@
 .copilot-entry p { color: #53616d; font-size: 11px; margin: 4px 0; }
 .copilot-entry button { display: block; min-height: 36px; font-size: 12px; color: #245b65; text-align: left; }
 @media (min-width: 768px) and (max-width: 1199px) {
-  .ct-investigation-main { flex-wrap: wrap; }
-  .ct-investigation-nav { width: 100%; border-bottom: 1px solid #d8dfe4; }
-  .ct-investigation-nav nav { display: flex; align-items: center; gap: 4px; padding: 4px 10px; overflow: auto; }
-  .ct-investigation-nav nav > div, .ct-investigation-nav nav > button:first-of-type { display: none; }
-  .ct-investigation-nav nav > button { width: auto; flex: 0 0 auto; }
-  .ct-investigation-nav details { margin: 0; padding: 0; border: 0; flex-shrink: 0; }
-  .ct-investigation-nav details[open] > div { position: absolute; z-index: 20; background: #fff; border: 1px solid #cbd4db; padding: 8px; }
   .ct-investigation-inspector { width: 310px; }
-  .ct-investigation-graph, .ct-investigation-inspector { height: calc(100% - 54px); }
   .case-brief { grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 10px 16px; }
 }
 @media (max-width: 767px) {
@@ -158,3 +150,77 @@
 .copilot-panel input { min-width: 0; flex: 1; background: white; color: #25333b; border: 1px solid #aabac4; padding: 8px; border-radius: 5px; }
 .copilot-panel form button { padding: 6px 12px; border: 1px solid #aabac4; border-radius: 5px; }
 @media (max-width: 600px) { .copilot-questions { grid-template-columns: 1fr; } .intelligence-panel dl { grid-template-columns: 1fr; gap: 3px; } .intelligence-panel dd { margin-bottom: 6px; } }
+
+/* Layout controls never remount the graph, preserving selection and camera state. */
+.ct-investigation-shell [hidden] { display: none !important; }
+.ct-investigation-shell { min-width: 0; max-width: 100%; }
+.ct-investigation-shell .ct-investigation-header { height: auto; flex-wrap: wrap; gap: 8px; padding-block: 8px; }
+.ct-investigation-header > div { min-width: 0; flex-wrap: wrap; }
+.ct-investigation-main { position: relative; min-height: 0; min-width: 0; }
+.ct-investigation-graph { overflow: auto; overflow-wrap: anywhere; }
+.investigation-context { max-height: 40dvh; overflow-y: auto; }
+.workspace-layout-controls { position: sticky; top: 0; z-index: 40; display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; padding: 8px 12px; overflow: visible; background: #fff; border-bottom: 2px solid #aebdc6; }
+.workspace-layout-controls button, .workspace-sidebar-header button, .ct-inspector-rail button, .inspector-collapse-button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 6px; min-height: 38px; min-width: 34px; padding: 5px 8px; border: 2px solid #245b65; border-radius: 5px; color: #245b65; background: #edf3f4; font-size: 11px; font-weight: 750; cursor: pointer; white-space: nowrap; }
+.workspace-layout-controls button { min-height: 40px; padding: 7px 12px; font-size: 12px; }
+.workspace-layout-controls button svg, .workspace-sidebar-header button svg, .ct-inspector-rail button svg, .inspector-collapse-button svg { width: 18px; height: 18px; flex-shrink: 0; }
+.ct-investigation-shell :is(button, summary, select):focus-visible { outline: 2px solid #245b65; outline-offset: -2px; }
+.desktop-workspace-nav svg { flex-shrink: 0; }
+.workspace-sidebar-header { position: relative; z-index: 21; display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; min-height: 45px; padding: 5px 8px 5px 12px; overflow: visible; background: #fff; border-bottom: 1px solid #d8dfe4; }
+.workspace-sidebar-header > span { font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; color: #53616d; }
+.ct-investigation-nav .desktop-workspace-nav { flex: 1; overflow-y: auto; }
+.ct-investigation-nav.is-collapsed { width: 56px; }
+.ct-investigation-nav.is-collapsed .workspace-sidebar-header { justify-content: center; padding-inline: 5px; }
+.ct-investigation-nav.is-collapsed .workspace-sidebar-header > span { display: none; }
+.ct-investigation-nav.is-collapsed .desktop-workspace-nav { padding: 6px; }
+.ct-investigation-nav.is-collapsed .desktop-workspace-nav > div,
+.ct-investigation-nav.is-collapsed .desktop-workspace-nav > button > span,
+.ct-investigation-nav.is-collapsed .desktop-workspace-nav summary > span,
+.ct-investigation-nav.is-collapsed .desktop-workspace-nav details > div { display: none; }
+.ct-investigation-nav.is-collapsed .desktop-workspace-nav :is(button, summary) { justify-content: center; padding-inline: 6px; }
+.ct-investigation-inspector { min-width: 0; overflow-wrap: anywhere; }
+.inspector-location { z-index: 21; flex-wrap: wrap; align-items: center; padding: 8px 12px; gap: 8px; overflow: visible; }
+.inspector-location > button { flex-shrink: 0; }
+.inspector-location > strong { min-width: 0; overflow-wrap: anywhere; }
+.inspector-location > span { flex-shrink: 0; }
+.inspector-location .inspector-collapse-button span { font-size: 11px; color: inherit; }
+.ct-inspector-rail { position: relative; z-index: 21; width: 42px; flex: 0 0 42px; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 6px 4px; overflow: visible; border-left: 1px solid #d8dfe4; background: #fff; }
+.ct-inspector-rail button { flex-direction: column; padding: 8px 5px; }
+.ct-inspector-rail span { writing-mode: vertical-rl; text-transform: uppercase; letter-spacing: .08em; font-size: 10px; font-weight: 750; }
+.workspace-layout-controls .graph-focus-toggle { margin-left: auto; background: #245b65; color: #fff; }
+.trail-toolbar, .trail-selection-label, .trail-route, .trail-legend { flex-shrink: 0; }
+.trail-route { max-height: 100px; }
+.trail-selection-label { overflow-wrap: anywhere; }
+.ct-investigation-shell .ct-replay-bar { max-width: calc(100% - 24px); flex-wrap: wrap; justify-content: center; }
+.ct-investigation-shell .ct-replay-bar select { max-width: 100%; }
+
+.ct-investigation-shell.ct-graph-focus { position: fixed; inset: 0; z-index: 50; height: 100dvh !important; min-height: 0; overflow: hidden !important; }
+.ct-graph-focus .ct-investigation-header { display: none; }
+.ct-graph-focus .ct-investigation-main { flex: 1; flex-direction: row; overflow: hidden !important; }
+.ct-investigation-shell.ct-graph-focus .ct-investigation-graph { flex: 1 !important; height: 100% !important; min-height: 0; width: 100%; margin: 0; border: 0; border-radius: 0; overflow: auto; }
+.ct-graph-focus .ct-investigation-inspector { position: absolute; inset: 0 0 0 auto; z-index: 20; width: min(360px, 90%) !important; height: 100%; overflow-y: auto !important; box-shadow: -8px 0 24px #202a3526; }
+
+@media (max-width: 1199px) {
+  /* Inspector floats over the graph on narrow screens instead of squeezing it. */
+  .ct-investigation-shell .ct-investigation-inspector { position: absolute; inset: 0 0 0 auto; z-index: 20; width: min(360px, 90%) !important; max-height: 100%; overflow-y: auto !important; box-shadow: -8px 0 24px #202a3526; }
+}
+@media (max-width: 767px) {
+  .workspace-layout-controls { gap: 4px; padding: 6px; }
+  .workspace-layout-controls button { flex: 1 1 auto; padding-inline: 6px; }
+  .workspace-sidebar-header button, .ct-inspector-rail button, .inspector-collapse-button { min-height: 40px; min-width: 40px; }
+  .ct-investigation-shell .ct-investigation-main { overflow: hidden !important; }
+  .ct-investigation-shell .ct-investigation-graph { overflow-y: auto; min-width: 0; }
+  .ct-investigation-shell .ct-investigation-nav { width: 100% !important; flex-shrink: 0; }
+  .ct-investigation-nav.is-collapsed .ct-mobile-investigation-nav { display: none !important; }
+  .ct-investigation-nav.is-collapsed .workspace-sidebar-header { min-height: 44px; justify-content: space-between; padding-inline: 12px 8px; }
+  .ct-investigation-nav.is-collapsed .workspace-sidebar-header > span { display: inline; }
+  .ct-mobile-investigation-nav > div { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .ct-inspector-rail { order: 2; width: 100%; flex: 0 0 44px; flex-direction: row-reverse; justify-content: flex-start; padding: 2px 8px; border-left: 0; border-top: 1px solid #d8dfe4; }
+  .ct-inspector-rail span { writing-mode: horizontal-tb; }
+  .ct-inspector-rail button { flex-direction: row; padding: 5px 8px; }
+  .ct-graph-focus .ct-inspector-rail { order: initial; width: 42px; flex: 0 0 42px; flex-direction: column; justify-content: flex-start; padding: 6px 4px; border-top: 0; border-left: 1px solid #d8dfe4; }
+  .ct-graph-focus .ct-inspector-rail span { writing-mode: vertical-rl; }
+  .ct-graph-focus .ct-inspector-rail button { flex-direction: column; padding: 8px 5px; }
+  .trail-toolbar { padding: 6px; gap: 4px; }
+  .trail-toolbar button { padding-inline: 6px; }
+  .trail-route { padding: 6px; }
+}
