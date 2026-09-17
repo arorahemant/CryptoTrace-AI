@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.database import init_db, engine, async_session_factory
 from app.core.security import get_password_hash
 from app.api.auth import router as auth_router
+from app.api.admin_bootstrap import router as admin_bootstrap_router
 from app.api.cases import router as cases_router
 from app.api.reporter import router as reporter_router
 from app.api.asset_actions import router as asset_actions_router
@@ -160,6 +161,7 @@ app.add_middleware(
 
 # Routes
 app.include_router(auth_router, prefix=settings.API_PREFIX)
+app.include_router(admin_bootstrap_router, prefix=settings.API_PREFIX)
 app.include_router(cases_router, prefix=settings.API_PREFIX)
 app.include_router(reporter_router, prefix=settings.API_PREFIX)
 app.include_router(asset_actions_router, prefix=settings.API_PREFIX)

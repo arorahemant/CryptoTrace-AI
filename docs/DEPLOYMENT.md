@@ -1,5 +1,50 @@
 # Staging deployment architecture
 
+## One-time production admin bootstrap
+
+The existing backend may create its first legitimate admin without Render Shell
+using `POST /api/v1/auth/bootstrap-first-admin`. This is disabled by default and
+is independent of normal login and demo settings. These are later deployment
+steps, not instructions to change the current service during development.
+
+1. Deploy the reviewed backend to the existing `CryptoTrace-AI` service
+   `srv-dacjhbuk1f9s73cjlh70` (public URL
+   `https://cryptotrace-ai-z7hp.onrender.com`). Verify startup has applied Alembic
+   `0009_first_admin_bootstrap` to the service's existing PostgreSQL database.
+   No separate service or external database connection is needed.
+2. Keep the existing production environment unchanged: `APP_ENV=production`,
+   `DEMO_MODE=false`, `SEED_DEMO_ACCOUNTS=false`, `DEBUG=false`,
+   `USE_SQLITE=false` (or unset), and the existing `DATABASE_URL`, `SECRET_KEY`,
+   `CORS_ORIGINS`, and `ALCHEMY_API_KEY`. Do not copy their values elsewhere.
+3. In this service's Render Environment settings add only
+   `FIRST_ADMIN_BOOTSTRAP_TOKEN`, with a new cryptographically random secret
+   containing at least 32 random bytes encoded as 64 hexadecimal characters
+   (accepted input: 32–128 non-whitespace ASCII characters). Keep it in the
+   operator's password manager; do not include it in source or command arguments.
+   Apply the environment change to the existing service.
+4. From a trusted HTTPS client with request/response recording disabled, send a
+   single POST to the service's bootstrap endpoint. Supply the token only through
+   `X-First-Admin-Bootstrap-Token` and JSON fields `username`, `email`, `full_name`,
+   `password`. Enter the password through the client's secret-input facility;
+   use 12–72 characters and no more than 72 UTF-8 bytes. Do not send a role or a
+   reserved demo identity. Never put the password in an environment variable.
+5. A 201 response with `Administrator provisioned` confirms the transaction
+   committed. Remove `FIRST_ADMIN_BOOTSTRAP_TOKEN` from Render and apply that
+   change. Sign in normally through the existing application. Do not copy a JWT
+   into logs or reports. The endpoint remains permanently consumed even if the
+   environment variable is accidentally retained or re-added.
+
+Bootstrap cannot reset/reactivate an existing admin. An existing non-demo admin,
+even inactive, returns 409. An identity conflict also returns 409 without changing
+accounts. A 429 requires waiting for the database-wide 15-minute attempt window;
+rotation/restart does not clear it. A 503 requires investigating service/database
+readiness without dumping request data or secrets. Do not remove the consumption
+row to recover an account. `python -m app.provision_admin` still exists for trusted
+interactive operator environments and shares the same permanent guard.
+
+The older staging sections below describe historical checkpoints; their previous
+claims that no migrations exist are superseded by the versioned Alembic runtime.
+
 This document describes the lowest-risk staging path and configuration
 contract for the current repository. The hosted-service facts recorded below
 do not by themselves prove that the backend is using PostgreSQL.

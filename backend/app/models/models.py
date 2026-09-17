@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, Text, Float, Integer, Boolean, DateTime,
     ForeignKey, Enum, Index, JSON, UniqueConstraint, BigInteger,
-    Uuid,
+    Uuid, CheckConstraint,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -95,6 +95,17 @@ class AssetActionStatus(str, enum.Enum):
 
 
 # ─── User ──────────────────────────────────────────────────────────────────────
+
+class FirstAdminBootstrapState(Base):
+    """Singleton safety record; deliberately independent of the admin's lifetime."""
+    __tablename__ = "first_admin_bootstrap_state"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_first_admin_bootstrap_singleton"),)
+
+    id = Column(Integer, primary_key=True)
+    consumed = Column(Boolean, nullable=False, default=False)
+    window_started = Column(Float, nullable=False, default=0)
+    attempts = Column(Integer, nullable=False, default=0)
+
 
 class User(Base):
     __tablename__ = "users"

@@ -32,7 +32,7 @@ def _is_unsafe_secret(value: str) -> bool:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, hide_input_in_errors=True)
 
     _LOCAL_CORS_ORIGINS = (
         "http://localhost:3000",
@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     SECRET_KEY: Optional[str] = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     ALGORITHM: str = "HS256"
+    FIRST_ADMIN_BOOTSTRAP_TOKEN: Optional[SecretStr] = Field(default=None, exclude=True, repr=False)
 
     # Blockchain Providers
     ALCHEMY_API_KEY: Optional[SecretStr] = Field(default=None, exclude=True, repr=False)

@@ -2,7 +2,7 @@
 CryptoTrace AI - Pydantic Schemas
 Request/response validation for all API endpoints.
 """
-from pydantic import BaseModel, ConfigDict, Field, EmailStr
+from pydantic import BaseModel, ConfigDict, Field, EmailStr, SecretStr, field_validator, model_validator
 from typing import Optional, List, Any
 from datetime import datetime
 from uuid import UUID
@@ -75,6 +75,37 @@ class StaffProvisionRequest(BaseModel):
     password: str = Field(..., min_length=12, max_length=72)
     full_name: str = Field(..., min_length=2, max_length=255)
     role: Literal["investigator", "supervisor"] = "investigator"
+
+
+class FirstAdminBootstrapRequest(BaseModel):
+    """Admin-only input; role and other extra fields are forbidden."""
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    email: EmailStr
+    username: str = Field(..., min_length=3, max_length=100, pattern=r"^[a-zA-Z0-9_.-]+$")
+    password: SecretStr = Field(..., min_length=12, max_length=72)
+    full_name: str = Field(..., min_length=2, max_length=255)
+
+    @field_validator("password")
+    @classmethod
+    def bcrypt_length(cls, value: SecretStr) -> SecretStr:
+        # bcrypt's limit is bytes, not Unicode characters. Never truncate.
+        if len(value.get_secret_value().encode("utf-8")) > 72:
+            raise ValueError("Password exceeds bcrypt byte limit")
+        return value
+
+    @field_validator("full_name")
+    @classmethod
+    def nonblank_name(cls, value: str) -> str:
+        if len(value.strip()) < 2:
+            raise ValueError("A full name is required")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def reject_reserved_demo_identity(self):
+        if (self.username in {"investigator", "supervisor", "admin", "reporter"}
+                and self.email == f"{self.username}@cryptotrace.ai"):
+            raise ValueError("Reserved demonstration identity")
+        return self
 
 
 class StaffAccessUpdate(BaseModel):

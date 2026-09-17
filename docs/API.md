@@ -2,6 +2,30 @@
 
 Base path `/api/v1`. Authentication uses `POST /auth/login`. `POST /auth/register` is a denied compatibility endpoint and cannot create staff accounts. `POST /auth/reporter/register` creates only a reporter. An authenticated administrator provisions active investigators or supervisors with `POST /auth/users` and may activate or deactivate non-admin staff with `PATCH /auth/users/{user_id}`. Initial administrator creation uses `backend/app/provision_admin.py`; the staff API cannot create administrators.
 
+`POST /auth/bootstrap-first-admin` is a separate, one-time operator bootstrap,
+disabled unless `FIRST_ADMIN_BOOTSTRAP_TOKEN` is explicitly configured. Send that
+secret only in the `X-First-Admin-Bootstrap-Token` header over HTTPS. The JSON body
+requires `username`, `email`, `full_name`, and `password`; no `role` or extra fields
+are accepted. Passwords require 12–72 characters and at most 72 UTF-8 bytes.
+The endpoint always creates an active, non-demo admin using the existing bcrypt
+hasher. It returns only `{"detail":"Administrator provisioned"}` (201), never a
+JWT or account fields. Sign in separately using the unchanged login endpoint.
+
+Failures contain only a fixed `detail`: 404 when disabled/misconfigured, 403 for
+missing/invalid token, 409 for unavailable bootstrap or identity conflict, 422
+for invalid input, 429 for exhausted attempts, and 503 for internal/database
+failure. Responses use `Cache-Control: no-store`. A database-wide budget allows
+10 attempts per 15-minute window, including invalid tokens and invalid bodies;
+it survives worker restarts and token rotation. Authenticated bodies are limited
+to 8 KiB and five seconds to read/validate.
+
+An existing non-demo admin (including an inactive one) blocks bootstrap. A
+permanent singleton record prevents reuse even after deleting/demoting the admin,
+rotating the token, or redeploying. The operator CLI shares this guard. Migration
+`0009_first_admin_bootstrap` initializes the guard and marks it consumed on
+databases already containing a non-demo admin. Bootstrap fails closed if this
+migration's state is missing. See [Deployment](DEPLOYMENT.md#one-time-production-admin-bootstrap).
+
 Reporters create and read only their own submissions. Investigators read and mutate owned cases and may review or accept submissions. Supervisors may review all cases and submissions but cannot mutate cases or action requests. Administrators may review and mutate cases, accept submissions, and manage non-admin staff access. Ownership is enforced separately from role permissions; unauthorized case and assigned-submission reads return 404 where applicable.
 
 Case APIs include create/list/detail, investigate, wallets, transactions, graph, fund-flow, timeline, findings, evidence GET/POST, audit history, WHY, replay, Copilot query, close, and report POST/GET. Case detail includes effective `permissions` and a separate `lifecycle` (`open` or `closed`). Successful analysis records processing completion and leaves the case in review. Only `POST /cases/{case_id}/close` records investigator closure and sets `closed_at`.
