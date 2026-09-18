@@ -1,17 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, FileSearch, Loader2, LogOut, Send, ShieldCheck } from 'lucide-react';
-import api from '@/lib/api';
-import { CapabilityNotice } from '@/components/CapabilityNotice';
-import { type CapabilityState, type NetworkCapability } from '@/lib/capabilities';
+import { ArrowRight, Check, CheckCircle2, Copy, FileSearch, Loader2, LogOut, RefreshCw, Send } from 'lucide-react';
+import api, { ApiError } from '@/lib/api';
+import type { CapabilityState, NetworkCapability } from '@/lib/capabilities';
+import { networkOptions, reporterStatus, walletError, reporterError, formatReportDate } from '@/lib/reporter-ui';
+import './reporter.css';
 
-interface ReporterUser {
-  full_name: string;
-  role: string;
-}
-
+interface ReporterUser { full_name: string; role: string }
 interface ReporterSubmission {
   capability: CapabilityState;
   id: string;
@@ -20,31 +17,60 @@ interface ReporterSubmission {
   reported_wallet: string;
   blockchain: string;
   asset: string;
-  analysis_status: string;
-  analysis_message: string;
   status: string;
-  status_label: string;
   submitted_at: string;
-  last_status_update: string;
-  next_step: string;
+  last_status_update?: string;
   assigned_investigator?: { display_name: string; role_title: string } | null;
 }
 
-const networkOptions = [
-  { value: 'demo', label: 'Demo Network', assets: [{ value: 'ETH', label: 'ETH' }], capability: 'analysis_available', message: 'Analysis available using deterministic demonstration data.' },
-  { value: 'ethereum', label: 'Ethereum', assets: [{ value: 'ETH', label: 'ETH' }, { value: 'USDT', label: 'USDT' }, { value: 'USDC', label: 'USDC' }], capability: 'analysis_not_connected', message: 'Report accepted. Live analysis is not connected for Ethereum.' },
-  { value: 'bitcoin', label: 'Bitcoin', assets: [{ value: 'BTC', label: 'BTC' }], capability: 'analysis_not_connected', message: 'Report accepted. Live analysis is not connected for Bitcoin.' },
-  { value: 'tron', label: 'Tron', assets: [{ value: 'TRX', label: 'TRX' }, { value: 'USDT', label: 'USDT' }], capability: 'analysis_not_connected', message: 'Report accepted. Live analysis is not connected for Tron.' },
-  { value: 'polygon', label: 'Polygon', assets: [{ value: 'POL', label: 'POL / MATIC' }, { value: 'USDT', label: 'USDT' }, { value: 'USDC', label: 'USDC' }], capability: 'analysis_not_connected', message: 'Report accepted. Live analysis is not connected for Polygon.' },
-  { value: 'bsc', label: 'BNB Smart Chain', assets: [{ value: 'BNB', label: 'BNB' }, { value: 'USDT', label: 'USDT' }, { value: 'USDC', label: 'USDC' }], capability: 'analysis_not_connected', message: 'Report accepted. Live analysis is not connected for BNB Smart Chain.' },
-] as const;
+function Reference({ value }: { value: string }) {
+  const [copyState, setCopyState] = useState('');
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyState('Reference ID copied.');
+    } catch {
+      setCopyState('Copy is unavailable. Press and hold the reference ID to select and copy it.');
+    }
+  }
+  return <div className="rp-reference">
+    <p className="rp-label">Reference ID</p>
+    <div className="rp-reference-row"><strong>{value}</strong><button type="button" className="ct-button-secondary" onClick={copy} aria-label={`Copy reference ID ${value}`}><Copy size={18} aria-hidden="true" />Copy</button></div>
+    <p className="rp-help" role="status">{copyState || 'Save this ID. Use it to find this report in your account.'}</p>
+  </div>;
+}
 
-const statusStyle: Record<string, string> = {
-  report_received: 'border-[#b4c8c7] bg-[#edf3f3] text-[#124343]',
-  under_investigation: 'border-[#d9b49d] bg-[#fff4ed] text-[#734934]',
-  further_review_required: 'border-[#d3bdaa] bg-[#f5f0eb] text-[#58331f]',
-  investigation_completed: 'border-[#a9cdb8] bg-[#edf8f1] text-[#28634c]',
-};
+function NetworkNotice({ capability, demo }: { capability?: CapabilityState; demo: boolean }) {
+  if (demo || capability?.data_origin === 'demo') return <p className="rp-notice"><strong>DEMO DATA</strong> · This network uses demonstration data, not real wallet activity.</p>;
+  if (!capability) return <p className="rp-notice">Network availability could not be checked. You can still submit a report.</p>;
+  if (capability.provider_state === 'not_connected') return <p className="rp-notice">Reports are accepted for this network. Wallet activity analysis is currently unavailable.</p>;
+  return null;
+}
+
+function ReportCard({ report }: { report: ReporterSubmission }) {
+  const status = reporterStatus(report.status);
+  const submitted = formatReportDate(report.submitted_at);
+  const updated = formatReportDate(report.last_status_update);
+  return <article className="ct-card rp-report" aria-label={`Report ${report.reference_number}`}>
+    <Reference value={report.reference_number} />
+    <h3>{report.title}</h3>
+    <p className="rp-help">{networkOptions.find(n => n.value === report.blockchain)?.label || 'Reported network'} · {report.asset}</p>
+    <p className="rp-wallet">{report.reported_wallet}</p>
+    <NetworkNotice capability={report.capability} demo={report.blockchain === 'demo'} />
+    <ol className="rp-journey" aria-label="Report status journey">
+      <li aria-current={report.status === 'report_received' ? 'step' : undefined}>
+        <span className="rp-step"><Check size={18} aria-hidden="true" /></span>
+        <div><p className="rp-label">Report received{report.status === 'report_received' && <span className="rp-current">Current status</span>}</p>
+          {submitted && <p className="rp-help"><time dateTime={report.submitted_at}>{submitted}</time></p>}
+          {report.status === 'report_received' && <p>{status.description}</p>}
+        </div>
+      </li>
+      {report.status !== 'report_received' && <li aria-current="step"><span className="rp-step rp-step-current" aria-hidden="true" /><div><p className="rp-label">{status.label}<span className="rp-current">Current status</span></p><p>{status.description}</p></div></li>}
+    </ol>
+    <p className="rp-help rp-updated">{updated ? <>Last update <time dateTime={report.last_status_update}>{updated}</time></> : 'Last update time is unavailable.'}</p>
+    {report.assigned_investigator && <div className="rp-contact"><p className="rp-label">Assigned investigator</p><p>{report.assigned_investigator.display_name}</p><p className="rp-help">{report.assigned_investigator.role_title}</p></div>}
+  </article>;
+}
 
 export default function ReporterPage() {
   const router = useRouter();
@@ -54,45 +80,60 @@ export default function ReporterPage() {
     if (!stored) return null;
     try { return JSON.parse(stored) as ReporterUser; } catch { return null; }
   });
+  const [view, setView] = useState('home');
+  const [ready, setReady] = useState(false);
   const [submissions, setSubmissions] = useState<ReporterSubmission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [capabilities, setCapabilities] = useState<NetworkCapability[]>([]);
-  useEffect(() => { api.capabilities().then(data => setCapabilities(data.networks)).catch(() => setCapabilities([])); }, []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [createdReference, setCreatedReference] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ title?: string; wallet?: string }>({});
+  const [created, setCreated] = useState<ReporterSubmission | null>(null);
   const [title, setTitle] = useState('Suspicious wallet report');
   const [wallet, setWallet] = useState('0xReported001');
   const [blockchain, setBlockchain] = useState('demo');
   const [asset, setAsset] = useState('ETH');
   const [description, setDescription] = useState('');
-  const selectedNetwork = networkOptions.find((option) => option.value === blockchain) || networkOptions[0];
+  const [referenceQuery, setReferenceQuery] = useState('');
+  const submitLock = useRef(false);
+  const loadVersion = useRef(0);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const titleInput = useRef<HTMLInputElement>(null);
+  const walletInput = useRef<HTMLTextAreaElement>(null);
+  const selectedNetwork = networkOptions.find(option => option.value === blockchain) || networkOptions[0];
 
   const loadSubmissions = useCallback(async () => {
+    const version = ++loadVersion.current;
+    setLoading(true);
+    setLoadError('');
     try {
       const data = await api.listReporterSubmissions();
-      setSubmissions(data);
-      setError('');
+      if (version === loadVersion.current) setSubmissions(data);
     } catch (requestError) {
-      console.error('Reporter submissions could not be loaded', requestError);
-      setError('Your reports could not be loaded. Check your connection and try again.');
+      if (version === loadVersion.current) setLoadError(reporterError(requestError instanceof ApiError ? requestError.status : undefined, 'load'));
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-    if (!api.getToken()) {
-      router.replace('/');
-      return;
-    }
-    if (user?.role !== 'reporter') {
-      router.replace('/dashboard');
-      return;
-    }
-    void Promise.resolve().then(loadSubmissions);
+    if (!api.getToken() || user?.role !== 'reporter') { router.replace('/#reporter'); return; }
+    void Promise.resolve().then(() => { setReady(true); return loadSubmissions(); });
+    api.capabilities().then(data => setCapabilities(data.networks)).catch(() => setCapabilities([]));
   }, [loadSubmissions, router, user?.role]);
+
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [view]);
+
+  function navigate(next: string) {
+    if (submitLock.current) return;
+    setView(next);
+    if (next === 'track') void loadSubmissions();
+  }
 
   const handleLogout = () => {
     api.clearToken();
@@ -102,101 +143,103 @@ export default function ReporterPage() {
 
   const submitReport = async (event: React.FormEvent) => {
     event.preventDefault();
-    setSubmitting(true);
+    if (submitLock.current || created) return;
+    const validation = { title: title.trim().length < 3 ? 'Add a title with at least 3 characters.' : undefined, wallet: walletError(wallet, blockchain) };
+    setFieldErrors(validation);
     setError('');
-    setCreatedReference('');
+    if (validation.title || validation.wallet) {
+      (validation.title ? titleInput.current : walletInput.current)?.focus();
+      return;
+    }
+    submitLock.current = true;
+    setSubmitting(true);
     try {
-      const submission = await api.createReporterSubmission({
-        title,
-        reported_wallet: wallet,
-        blockchain,
-        asset,
-        description: description || undefined,
-      });
-      setSubmissions((current) => [submission, ...current]);
-      setCreatedReference(submission.reference_number);
+      const submission = await api.createReporterSubmission({ title: title.trim(), reported_wallet: wallet.trim(), blockchain, asset, description: description.trim() || undefined });
+      ++loadVersion.current;
+      setLoading(false);
+      setSubmissions(current => [submission, ...current.filter(item => item.id !== submission.id)]);
+      setCreated(submission);
+      setView('success');
       setDescription('');
     } catch (requestError) {
-      console.error('Reporter submission failed', requestError);
-      setError('The report could not be submitted. Check the wallet details and try again.');
+      setError(reporterError(requestError instanceof ApiError ? requestError.status : undefined, 'submit'));
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   };
 
-  return (
-    <main id="main-content" className="ct-page">
-      <header className="ct-topbar sticky top-0 z-50 flex min-h-16 items-center justify-between gap-3 px-4 py-2 sm:px-6">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="ct-brand-mark h-9 w-9 rounded-lg"><FileSearch className="h-4 w-4" aria-hidden="true" /></div>
-          <div className="min-w-0">
-            <div className="truncate text-sm font-bold text-[var(--ct-ink)]">CryptoTrace AI</div>
-            <div className="text-[10px] text-[var(--ct-ink-muted)]">Reporter view</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="hidden text-sm text-[var(--ct-ink-muted)] sm:inline">{user?.full_name || 'Reporter'}</span>
-          <button type="button" onClick={handleLogout} aria-label="Sign out" className="ct-icon-button flex items-center justify-center"><LogOut className="h-4 w-4" /></button>
-        </div>
-      </header>
+  function startReport() {
+    if (created) { setCreated(null); setWallet(''); setTitle('Suspicious wallet report'); setError(''); setFieldErrors({}); }
+    navigate('report');
+  }
 
-      <div className="ct-reporter-content mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
-        <section className="ct-reporter-intro mb-7">
-          <p className="ct-eyebrow mb-2">Your report</p>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--ct-ink)] sm:text-3xl">Report one wallet. Track your submission.</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--ct-ink-muted)]">Submit a suspicious wallet and keep the reference ID. This view shows only safe status information for reports owned by your account.</p>
-        </section>
+  const matchingReports = submissions.filter(report => report.reference_number.toLowerCase().includes(referenceQuery.trim().toLowerCase()));
 
-        {error && <div role="alert" className="ct-error-panel mb-5 px-4 py-3 text-sm">{error}</div>}
-        {createdReference && (
-          <div role="status" className="mb-5 flex items-start gap-3 rounded-lg border border-[#a9cdb8] bg-[var(--ct-success-surface)] p-4 text-sm text-[var(--ct-ink)]">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--risk-low)]" />
-            <div><strong>Submission received.</strong><div className="mt-1 font-mono text-xs">Reference ID: {createdReference}</div></div>
-          </div>
-        )}
+  if (!ready) return <main id="main-content" className="ct-page rp-page"><div className="rp-state" role="status"><Loader2 className="rp-spinner" size={26} aria-hidden="true" /><p>Opening reporter access…</p></div></main>;
 
-        <section id="report-wallet" className="ct-reporter-form ct-card p-5 sm:p-6" aria-labelledby="report-wallet-heading">
-          <div className="mb-5 flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--ct-surface-high)] text-[var(--ct-primary)]"><Send className="h-4 w-4" /></div>
-            <div><h2 id="report-wallet-heading" className="font-bold text-[var(--ct-ink)]">Report a suspicious wallet</h2><p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">Wallet format is validated. Submission does not claim ownership, guilt, or a confirmed fraud finding.</p></div>
-          </div>
-          <form onSubmit={submitReport} className="grid gap-4 sm:grid-cols-2">
-            <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Report title</span><input className="ct-field px-3 text-sm" value={title} onChange={(event) => setTitle(event.target.value)} required minLength={3} /></label>
-            <label><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Network / chain</span><select className="ct-field px-3 text-sm" value={blockchain} onChange={(event) => { const next = networkOptions.find((option) => option.value === event.target.value) || networkOptions[0]; setBlockchain(next.value); setAsset(next.assets[0].value); setWallet(next.value === 'demo' ? '0xReported001' : ''); }} aria-label="Network or chain">{networkOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <label><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Asset / currency</span><select className="ct-field px-3 text-sm" value={asset} onChange={(event) => setAsset(event.target.value)}>{selectedNetwork.assets.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">Wallet address</span><input className="ct-field px-3 font-mono text-sm" value={wallet} onChange={(event) => setWallet(event.target.value)} required minLength={10} placeholder={blockchain === 'demo' ? 'Demo wallet address' : 'Paste the wallet address'} /></label>
-            <div className="sm:col-span-2"><CapabilityNotice capability={capabilities.find(n => n.blockchain === blockchain)?.capability} /></div>
-            <label className="sm:col-span-2"><span className="mb-1.5 block text-sm font-semibold text-[var(--ct-ink)]">What happened? <span className="font-normal text-[var(--ct-ink-muted)]">(optional)</span></span><textarea className="ct-field min-h-24 resize-y px-3 py-2.5 text-sm" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} placeholder="Add context that may help an investigator review the report." aria-describedby="description-counter" /><div id="description-counter" className="mt-1.5 text-right text-xs text-[var(--ct-ink-muted)]" aria-live="polite">{description.length} / 2,000 characters</div></label>
-            <div className="sm:col-span-2"><button type="submit" disabled={submitting} className="ct-button-primary flex w-full items-center justify-center gap-2 px-4 py-2.5 text-sm disabled:opacity-50 sm:w-auto">{submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</> : 'Submit report'}</button></div>
-          </form>
-        </section>
+  return <main id="main-content" className="ct-page rp-page">
+    <header className="rp-header">
+      <button type="button" className="rp-brand" onClick={() => navigate('home')} disabled={submitting} aria-label="CryptoTrace AI reporter home"><span className="ct-brand-mark"><FileSearch size={22} aria-hidden="true" /></span><span>CryptoTrace AI<small>Wallet reporting</small></span></button>
+      <button type="button" className="ct-icon-button" onClick={handleLogout} disabled={submitting} aria-label="Sign out"><LogOut size={20} aria-hidden="true" /></button>
+    </header>
+    <div className="rp-shell">
+      <nav className="rp-nav" aria-label="Reporter navigation">
+        <button type="button" aria-current={view === 'report' || view === 'success' ? 'page' : undefined} onClick={startReport} disabled={submitting}><Send size={18} aria-hidden="true" />Report</button>
+        <button type="button" aria-current={view === 'track' ? 'page' : undefined} onClick={() => { setReferenceQuery(''); navigate('track'); }} disabled={submitting}><FileSearch size={18} aria-hidden="true" />Track</button>
+      </nav>
 
-        <section id="report-status" className="ct-reporter-status mt-8" aria-labelledby="submitted-reports-heading">
-          <div className="mb-3 flex items-end justify-between gap-3"><div><p className="ct-eyebrow mb-1">Status</p><h2 id="submitted-reports-heading" className="text-lg font-bold text-[var(--ct-ink)]">Your submitted reports</h2></div><span className="text-xs text-[var(--ct-ink-muted)]">{submissions.length} total</span></div>
-          {loading ? (
-            <div role="status" className="ct-state-panel flex items-center justify-center py-10 text-sm text-[var(--ct-ink-muted)]"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading reports…</div>
-          ) : submissions.length === 0 ? (
-            <div className="ct-state-panel px-5 py-10 text-center"><ShieldCheck className="mx-auto h-6 w-6 text-[var(--ct-ink-muted)]" /><p className="mt-3 text-sm font-semibold text-[var(--ct-ink)]">No reports submitted</p><p className="mt-1 text-xs text-[var(--ct-ink-muted)]">Your first submission will appear here with its reference ID.</p></div>
-          ) : (
-            <div className="space-y-3">
-              {submissions.map((submission) => (
-                <article key={submission.id} className="ct-card p-4 sm:p-5">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0"><div className="font-mono text-[10px] text-[var(--ct-outline)]">{submission.reference_number}</div><h3 className="mt-1 font-semibold text-[var(--ct-ink)]">{submission.title}</h3><p className="mt-1 break-all font-mono text-xs text-[var(--ct-ink-muted)]">{submission.reported_wallet}</p><p className="mt-2 text-xs font-semibold text-[var(--ct-ink)]">{submission.blockchain} · {submission.asset}</p></div>
-                    <span className={`ct-status-chip self-start ${statusStyle[submission.status] || statusStyle.report_received}`}>{submission.status_label}</span>
-                  </div>
-                  <div className="mt-4 grid gap-3 border-t border-[var(--ct-outline-variant)] pt-4 sm:grid-cols-2">
-                     <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">Analysis status</div><CapabilityNotice capability={submission.capability} /></div>
-                     <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">What happens next</div><p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">{submission.next_step}</p></div>
-                    <div><div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ct-outline)]">Accountability</div>{submission.assigned_investigator ? <div className="mt-1"><div className="text-sm font-semibold text-[var(--ct-ink)]">{submission.assigned_investigator.display_name}</div><div className="text-xs text-[var(--ct-ink-muted)]">{submission.assigned_investigator.role_title}</div></div> : <p className="mt-1 text-xs leading-5 text-[var(--ct-ink-muted)]">Approved investigator details are not available for display.</p>}</div>
-                  </div>
-                  <div className="mt-3 text-[10px] text-[var(--ct-outline)]">Submitted {new Date(submission.submitted_at).toLocaleString()} · Last status update {new Date(submission.last_status_update).toLocaleString()}</div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
-  );
+      {view === 'home' && <section className="rp-home">
+        <p className="rp-eyebrow">A clear first step</p>
+        <h1 ref={heading} tabIndex={-1}>Suspicious wallet?<br />Start with a report.</h1>
+        <p className="rp-lead">Share a wallet address and what happened. Receive a reference ID to follow your report’s status.</p>
+        <div className="rp-actions"><button type="button" className="ct-button-primary" onClick={startReport}>Report Suspicious Wallet<ArrowRight size={20} aria-hidden="true" /></button><button type="button" className="ct-button-secondary" onClick={() => navigate('track')}>Track My Report</button></div>
+        <p className="rp-help">Your reports and their status are available in your account.</p>
+        <ol className="rp-overview" aria-label="How reporting works"><li><span>1</span>Report a wallet</li><li><span>2</span>Save your reference ID</li><li><span>3</span>Track your report</li></ol>
+      </section>}
+
+      {view === 'report' && <section aria-labelledby="report-heading">
+        <div className="rp-section-heading"><p className="rp-eyebrow">New report</p><h1 id="report-heading" ref={heading} tabIndex={-1}>Report a suspicious wallet</h1><p>Share the details below. You’ll receive a reference ID after submitting.</p></div>
+        <form onSubmit={submitReport} noValidate className="ct-card rp-form" aria-busy={submitting}>
+          <fieldset disabled={submitting}>
+            <legend className="sr-only">Wallet report details</legend>
+            <label htmlFor="report-title">Report title <span>Required</span></label>
+            <input id="report-title" ref={titleInput} className="ct-field" value={title} onChange={e => { setTitle(e.target.value); setFieldErrors(current => ({ ...current, title: undefined })); }} required minLength={3} maxLength={255} aria-invalid={!!fieldErrors.title} aria-describedby={fieldErrors.title ? 'title-error' : undefined} />
+            {fieldErrors.title && <p id="title-error" className="rp-field-error">{fieldErrors.title}</p>}
+            <div className="rp-field-pair"><div><label htmlFor="report-network">Blockchain network <span>Required</span></label><select id="report-network" className="ct-field" value={blockchain} onChange={e => { const next = networkOptions.find(option => option.value === e.target.value)!; setBlockchain(next.value); setAsset(next.assets[0].value); setFieldErrors(current => ({ ...current, wallet: undefined })); }} aria-describedby="network-help">{networkOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+              <div><label htmlFor="report-asset">Currency <span>Required</span></label><select id="report-asset" className="ct-field" value={asset} onChange={e => setAsset(e.target.value)}>{selectedNetwork.assets.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div></div>
+            <p id="network-help" className="rp-help">Choose the network used for the wallet or transaction.</p>
+            <label htmlFor="report-wallet">Wallet address <span>Required</span></label>
+            <textarea id="report-wallet" ref={walletInput} className="ct-field rp-address-input" rows={3} value={wallet} onChange={e => { setWallet(e.target.value); setFieldErrors(current => ({ ...current, wallet: undefined })); }} required maxLength={255} spellCheck={false} autoCapitalize="none" autoCorrect="off" aria-invalid={!!fieldErrors.wallet} aria-describedby={`wallet-help${fieldErrors.wallet ? ' wallet-error' : ''}`} placeholder="Paste the complete wallet address" />
+            <p id="wallet-help" className="rp-help">{selectedNetwork.hint}</p>
+            {fieldErrors.wallet && <p id="wallet-error" className="rp-field-error">{fieldErrors.wallet}</p>}
+            <NetworkNotice capability={capabilities.find(n => n.blockchain === blockchain)?.capability} demo={blockchain === 'demo'} />
+            <label htmlFor="report-description">What happened? <span>Optional</span></label>
+            <textarea id="report-description" className="ct-field" rows={4} value={description} onChange={e => setDescription(e.target.value)} maxLength={2000} placeholder="Describe why this wallet seems suspicious." aria-describedby="description-help description-counter" />
+            <p id="description-help" className="rp-help">Never include passwords, private keys, or recovery phrases.</p><p id="description-counter" className="rp-counter">{description.length.toLocaleString()} / 2,000 characters</p>
+          </fieldset>
+          {error && <div role="alert" className="ct-error-panel rp-error"><p>{error}</p><button type="button" className="ct-button-secondary" onClick={() => navigate('track')}>Check my reports</button></div>}
+          <button type="submit" className="ct-button-primary rp-submit" disabled={submitting}>{submitting ? <><Loader2 className="rp-spinner" size={20} aria-hidden="true" />Submitting report…</> : <>Submit Report<ArrowRight size={20} aria-hidden="true" /></>}</button>
+          <p className="rp-help rp-submit-note" role="status">{submitting ? 'Please keep this screen open while your report is sent.' : 'Submitting a report does not confirm fraud or guarantee recovery of funds.'}</p>
+        </form>
+      </section>}
+
+      {view === 'success' && created && <section className="ct-card rp-success">
+        <CheckCircle2 className="rp-success-icon" size={44} aria-hidden="true" /><p className="rp-eyebrow">Submission successful</p><h1 ref={heading} tabIndex={-1}>Your report is received.</h1><p>Keep your reference ID somewhere safe so you can find this report again.</p>
+        {created.blockchain === 'demo' && <NetworkNotice capability={created.capability} demo />}
+        <Reference value={created.reference_number} />
+        <div className="rp-actions"><button type="button" className="ct-button-primary" onClick={() => { setReferenceQuery(created.reference_number); navigate('track'); }}>Track Report<ArrowRight size={20} aria-hidden="true" /></button><button type="button" className="ct-button-secondary" onClick={startReport}>Report another wallet</button></div>
+      </section>}
+
+      {view === 'track' && <section aria-labelledby="track-heading">
+        <div className="rp-section-heading"><p className="rp-eyebrow">Your reports</p><h1 id="track-heading" ref={heading} tabIndex={-1}>Track my report</h1><p>Check the latest available status of reports submitted from your account.</p></div>
+        <div className="rp-track-tools"><label htmlFor="reference-search">Find by reference ID</label><input id="reference-search" className="ct-field" type="search" value={referenceQuery} onChange={e => setReferenceQuery(e.target.value)} autoCapitalize="characters" spellCheck={false} placeholder="Enter your reference ID" /><button type="button" className="ct-button-secondary" disabled={loading} onClick={() => void loadSubmissions()}><RefreshCw size={18} aria-hidden="true" />Refresh status</button></div>
+        {loadError ? <div role="alert" className="ct-error-panel rp-error"><h2>Reports are unavailable</h2><p>{loadError}</p><button type="button" className="ct-button-secondary" onClick={() => void loadSubmissions()}>Try again</button></div>
+          : loading ? <div className="rp-state" role="status"><Loader2 className="rp-spinner" size={26} aria-hidden="true" /><h2>Checking your reports…</h2><p>This may take a moment.</p></div>
+          : submissions.length === 0 ? <div className="ct-state-panel rp-state"><FileSearch size={32} aria-hidden="true" /><h2>No reports yet</h2><p>Your reports will appear here after you submit a wallet.</p><button type="button" className="ct-button-primary" onClick={startReport}>Report Suspicious Wallet</button></div>
+          : matchingReports.length === 0 ? <div className="ct-state-panel rp-state" role="status"><FileSearch size={32} aria-hidden="true" /><h2>Report not found</h2><p>Check the reference ID and make sure you’re using the account that submitted the report.</p><button type="button" className="ct-button-secondary" onClick={() => setReferenceQuery('')}>Show all my reports</button></div>
+          : <div className="rp-reports"><p className="rp-help" role="status">{matchingReports.length} {matchingReports.length === 1 ? 'report' : 'reports'}{referenceQuery.trim() ? ' matching this reference' : ' in your account'}</p>{matchingReports.map(report => <ReportCard key={report.id} report={report} />)}</div>}
+      </section>}
+    </div>
+  </main>;
 }
