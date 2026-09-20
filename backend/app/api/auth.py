@@ -134,7 +134,15 @@ def account_allowed(user) -> bool:
         and user.email == "reporter@cryptotrace.ai"
         and is_demo_account
     )
-    return settings.demo_accounts_allowed or reporter_demo_allowed or not is_demo_account
+    investigator_demo_allowed = (
+        settings.INVESTIGATOR_DEMO_LOGIN_ENABLED
+        and isinstance(user, User)
+        and user.role == UserRole.INVESTIGATOR
+        and user.username == "investigator"
+        and user.email == "investigator@cryptotrace.ai"
+        and is_demo_account
+    )
+    return settings.demo_accounts_allowed or reporter_demo_allowed or investigator_demo_allowed or not is_demo_account
 
 
 @router.post("/reporter/register", response_model=UserResponse)

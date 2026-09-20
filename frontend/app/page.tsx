@@ -90,7 +90,7 @@ export default function LoginPage() {
   }, []);
   useEffect(() => {
     api.capabilities()
-      .then(data => setDemoAvailability({ staff: data.demo_login_available, reporter: data.reporter_demo_login_available }))
+      .then(data => setDemoAvailability({ staff: data.investigator_demo_login_available, reporter: data.reporter_demo_login_available }))
       .catch(() => setDemoAvailability({ staff: false, reporter: false }));
   }, []);
 

@@ -25,7 +25,7 @@ interface ApiOptions {
 }
 
 class ApiClient {
-  async capabilities(): Promise<{ networks: NetworkCapability[]; demo_login_available: boolean; reporter_demo_login_available: boolean }> {
+  async capabilities(): Promise<{ networks: NetworkCapability[]; demo_login_available: boolean; reporter_demo_login_available: boolean; investigator_demo_login_available: boolean }> {
     return this.request('/capabilities');
   }
   async currentUser() { return this.request('/auth/me'); }

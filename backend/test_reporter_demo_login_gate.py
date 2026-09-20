@@ -38,6 +38,11 @@ async def harness(tmp_path, monkeypatch):
                 hashed_password=get_password_hash("admin123"), role=UserRole.ADMIN, is_demo_account=True,
             ),
             User(
+                username="supervisor", email="supervisor@cryptotrace.ai", full_name="Demo Supervisor",
+                hashed_password=get_password_hash("supervisor123"), role=UserRole.SUPERVISOR,
+                is_demo_account=True,
+            ),
+            User(
                 username="production-admin", email="operator@example.com", full_name="Production Admin",
                 hashed_password=get_password_hash("synthetic-production-password"), role=UserRole.ADMIN,
                 is_demo_account=False,
@@ -53,6 +58,7 @@ async def harness(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "DEMO_MODE", True)
     monkeypatch.setattr(settings, "SEED_DEMO_ACCOUNTS", False)
     monkeypatch.setattr(settings, "REPORTER_DEMO_LOGIN_ENABLED", True)
+    monkeypatch.setattr(settings, "INVESTIGATOR_DEMO_LOGIN_ENABLED", True)
     _failed_logins.clear()
 
     app = FastAPI()
@@ -80,10 +86,12 @@ async def test_capability_separates_reporter_and_staff_demo_login(monkeypatch):
     monkeypatch.setattr(settings, "DEMO_MODE", True)
     monkeypatch.setattr(settings, "SEED_DEMO_ACCOUNTS", False)
     monkeypatch.setattr(settings, "REPORTER_DEMO_LOGIN_ENABLED", True)
+    monkeypatch.setattr(settings, "INVESTIGATOR_DEMO_LOGIN_ENABLED", True)
 
     response = await capabilities()
 
     assert response["reporter_demo_login_available"] is True
+    assert response["investigator_demo_login_available"] is True
     assert response["demo_login_available"] is False
 
 
@@ -93,7 +101,8 @@ async def test_reporter_only_demo_gate_and_production_accounts(harness):
     assert reporter.status_code == 200
     assert reporter.json()["user"]["role"] == "reporter"
 
-    assert (await login(harness, "investigator", "investigate123")).status_code == 403
+    assert (await login(harness, "investigator", "investigate123")).status_code == 200
+    assert (await login(harness, "supervisor", "supervisor123")).status_code == 403
     assert (await login(harness, "admin", "admin123")).status_code == 403
 
     production_admin = await login(harness, "production-admin", "synthetic-production-password")

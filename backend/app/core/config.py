@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # Hosted opt-in for the non-privileged, existing reporter demo account.
     # This does not seed or enable any staff demo identity.
     REPORTER_DEMO_LOGIN_ENABLED: bool = False
+    # Hosted opt-in for only the existing investigator demo account.
+    INVESTIGATOR_DEMO_LOGIN_ENABLED: bool = False
     API_PREFIX: str = "/api/v1"
     # Comma-separated exact browser/native origins. Demo mode defaults to the
     # local frontend; production must provide its deployed origin(s).
@@ -139,6 +141,10 @@ class Settings(BaseSettings):
     @property
     def reporter_demo_login_available(self) -> bool:
         return self.demo_accounts_allowed or self.REPORTER_DEMO_LOGIN_ENABLED
+
+    @property
+    def investigator_demo_login_available(self) -> bool:
+        return self.demo_accounts_allowed or self.INVESTIGATOR_DEMO_LOGIN_ENABLED
 
     @property
     def cors_origins(self) -> list[str]:
