@@ -133,6 +133,7 @@ the current source. Backend keys must never be prefixed with
 | `APP_ENV` | `staging` | `production` | Only `local` may enable privileged demo accounts. |
 | `DEMO_MODE` | Explicitly `true` | `false` with configured Alchemy and production settings | Demo data may be used in staging, but privileged demo account seeding is local-only. Non-demo startup requires backend `ALCHEMY_API_KEY` plus the existing production settings. Explicit Demo Network remains synthetic. |
 | `SEED_DEMO_ACCOUNTS` | `false` | `false` | `true` is accepted only with `APP_ENV=local` and `DEMO_MODE=true`. |
+| `REPORTER_DEMO_LOGIN_ENABLED` | Optional | Optional | `true` enables only the existing seeded reporter demo identity. It does not seed or enable investigator, supervisor, or administrator demo accounts. |
 | `DEBUG` | `false` recommended | `false` | Production configuration rejects `true`. |
 | `DATABASE_URL` | Managed PostgreSQL URL | Required managed PostgreSQL URL | The runtime accepts generic `postgresql://` input and normalizes it to the asyncpg dialect. SQLite is not allowed when `DEMO_MODE=false`. |
 | `SECRET_KEY` | Random injected value recommended | Required random value, at least 32 characters | Never commit it. Demo mode can generate an ephemeral process key. |

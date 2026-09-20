@@ -16,7 +16,7 @@ const demoCredentials = {
 
 function PathLogin({ path, demoAvailable }: { path: EntryPath; demoAvailable: boolean }) {
   const router = useRouter();
-  const prefillDemoCredentials = path === 'reporter' || demoAvailable;
+  const prefillDemoCredentials = demoAvailable;
   const [username, setUsername] = useState(prefillDemoCredentials ? demoCredentials[path].username : '');
   const [password, setPassword] = useState(prefillDemoCredentials ? demoCredentials[path].password : '');
   const [error, setError] = useState('');
@@ -78,7 +78,7 @@ function PathLogin({ path, demoAvailable }: { path: EntryPath; demoAvailable: bo
 
 export default function LoginPage() {
   const [path, setPath] = useState<EntryPath | null>(null);
-  const [demoAvailable, setDemoAvailable] = useState<boolean | null>(null);
+  const [demoAvailability, setDemoAvailability] = useState<{ staff: boolean; reporter: boolean } | null>(null);
   useEffect(() => {
     function readPath() {
       const hash = window.location.hash;
@@ -89,7 +89,9 @@ export default function LoginPage() {
     return () => window.removeEventListener('hashchange', readPath);
   }, []);
   useEffect(() => {
-    api.capabilities().then(data => setDemoAvailable(data.demo_login_available)).catch(() => setDemoAvailable(false));
+    api.capabilities()
+      .then(data => setDemoAvailability({ staff: data.demo_login_available, reporter: data.reporter_demo_login_available }))
+      .catch(() => setDemoAvailability({ staff: false, reporter: false }));
   }, []);
 
   return <main id="main-content" className="ct-page flex min-h-dvh items-center px-4 py-[max(24px,env(safe-area-inset-top),env(safe-area-inset-bottom))] sm:px-8">
@@ -101,9 +103,9 @@ export default function LoginPage() {
           <a href="#investigator" className="ct-card ct-card-interactive flex flex-col items-start gap-4 p-6 text-[var(--ct-primary)]"><ShieldCheck className="h-7 w-7" aria-hidden="true" /><span className="text-lg font-bold">INVESTIGATOR</span><span className="text-sm leading-6 text-[var(--ct-ink-muted)]">Sign in to the investigator / staff workspace.</span><span className="mt-auto flex min-h-11 items-center gap-2 font-semibold">Investigator login<ArrowRight className="h-5 w-5" aria-hidden="true" /></span></a>
           <Link href="/reporter" className="ct-button-primary flex flex-col items-start gap-4 rounded-lg p-6"><FileSearch className="h-7 w-7" aria-hidden="true" /><span className="text-lg font-bold">REPORTER</span><span className="text-sm font-normal leading-6">Report a suspicious wallet and track your report.</span><span className="mt-auto flex min-h-11 items-center gap-2 font-semibold">Report Suspicious Wallet<ArrowRight className="h-5 w-5" aria-hidden="true" /></span></Link>
         </div>
-      </section> : path === 'reporter' ? <PathLogin path="reporter" demoAvailable={demoAvailable === true} />
-        : demoAvailable === null ? <p role="status" className="flex items-center gap-3 py-8"><Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />Preparing sign in…</p>
-          : <PathLogin path="investigator" demoAvailable={demoAvailable} />}
+      </section> : demoAvailability === null ? <p role="status" className="flex items-center gap-3 py-8"><Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />Preparing sign in…</p>
+        : path === 'reporter' ? <PathLogin path="reporter" demoAvailable={demoAvailability.reporter} />
+          : <PathLogin path="investigator" demoAvailable={demoAvailability.staff} />}
     </div>
   </main>;
 }

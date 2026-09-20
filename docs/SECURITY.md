@@ -2,7 +2,7 @@
 
 The declared dependency set pins bcrypt 4.0.1 for Passlib 1.7.4 compatibility. Authentication tests run with that pinned version.
 
-Bearer JWTs protect case routes. A non-demo configuration fails closed unless a random `SECRET_KEY` of at least 32 characters is injected. Demo mode generates an ephemeral process key when none is configured. Privileged demo accounts are seeded only when `APP_ENV=local`, `DEMO_MODE=true`, and `SEED_DEMO_ACCOUNTS=true`; marked or reserved demo accounts cannot log in when that gate is closed.
+Bearer JWTs protect case routes. A non-demo configuration fails closed unless a random `SECRET_KEY` of at least 32 characters is injected. Demo mode generates an ephemeral process key when none is configured. Privileged demo accounts are seeded only when `APP_ENV=local`, `DEMO_MODE=true`, and `SEED_DEMO_ACCOUNTS=true`; marked or reserved staff demo accounts cannot log in when that gate is closed. `REPORTER_DEMO_LOGIN_ENABLED=true` is a separate hosted opt-in that permits only the existing, non-privileged `reporter@cryptotrace.ai` demo identity through the normal reporter authentication and ownership checks; it neither seeds nor enables staff accounts.
 
 Public `POST /auth/register` cannot create staff accounts. Public reporter registration creates only a reporter. The first administrator is created through the interactive operator CLI; authenticated administrators may provision only investigators or supervisors through the API and may activate or deactivate non-admin staff.
 

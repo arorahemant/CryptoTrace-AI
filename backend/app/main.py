@@ -179,6 +179,7 @@ async def health_check():
         "app": settings.APP_NAME,
         "demo_mode": settings.DEMO_MODE,
         "demo_login_available": settings.demo_accounts_allowed,
+        "reporter_demo_login_available": settings.reporter_demo_login_available,
         "live_provider_available": bool(settings.ALCHEMY_API_KEY and settings.ALCHEMY_API_KEY.get_secret_value()),
         "alchemy_diagnostic": app.state.alchemy_diagnostic.copy(),
     }
@@ -209,4 +210,5 @@ async def capabilities():
     return {"networks": [{"blockchain": chain.value, "assets": list(assets),
                           "capability": capability_for(blockchain=chain).model_dump(mode="json")}
                          for chain, assets in ASSETS_BY_BLOCKCHAIN.items()],
-            "demo_login_available": settings.demo_accounts_allowed}
+            "demo_login_available": settings.demo_accounts_allowed,
+            "reporter_demo_login_available": settings.reporter_demo_login_available}

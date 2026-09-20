@@ -126,7 +126,15 @@ async def register(request: RegisterRequest):
 def account_allowed(user) -> bool:
     # Also cover legacy seeded accounts before/without their marker migration.
     reserved = user.username in {"investigator", "supervisor", "admin", "reporter"} and user.email == f"{user.username}@cryptotrace.ai"
-    return settings.demo_accounts_allowed or not (getattr(user, "is_demo_account", False) or reserved)
+    is_demo_account = getattr(user, "is_demo_account", False) or reserved
+    reporter_demo_allowed = (
+        settings.REPORTER_DEMO_LOGIN_ENABLED
+        and isinstance(user, ReporterAccount)
+        and user.username == "reporter"
+        and user.email == "reporter@cryptotrace.ai"
+        and is_demo_account
+    )
+    return settings.demo_accounts_allowed or reporter_demo_allowed or not is_demo_account
 
 
 @router.post("/reporter/register", response_model=UserResponse)

@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     APP_ENV: str = "local"
     SEED_DEMO_ACCOUNTS: bool = False
+    # Hosted opt-in for the non-privileged, existing reporter demo account.
+    # This does not seed or enable any staff demo identity.
+    REPORTER_DEMO_LOGIN_ENABLED: bool = False
     API_PREFIX: str = "/api/v1"
     # Comma-separated exact browser/native origins. Demo mode defaults to the
     # local frontend; production must provide its deployed origin(s).
@@ -132,6 +135,10 @@ class Settings(BaseSettings):
     @property
     def demo_accounts_allowed(self) -> bool:
         return self.APP_ENV == "local" and self.DEMO_MODE and self.SEED_DEMO_ACCOUNTS
+
+    @property
+    def reporter_demo_login_available(self) -> bool:
+        return self.demo_accounts_allowed or self.REPORTER_DEMO_LOGIN_ENABLED
 
     @property
     def cors_origins(self) -> list[str]:
