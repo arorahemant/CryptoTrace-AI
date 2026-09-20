@@ -36,6 +36,31 @@ def validate_runtime_mode():
         )
 
 
+async def reconcile_demo_investigator(session) -> bool:
+    """Repair only the existing, exact demo investigator when explicitly enabled."""
+    if not settings.INVESTIGATOR_DEMO_LOGIN_ENABLED:
+        return False
+
+    from sqlalchemy import select
+    investigator = await session.scalar(
+        select(User).where(
+            User.username == "investigator",
+            User.email == "investigator@cryptotrace.ai",
+            User.role == UserRole.INVESTIGATOR,
+        )
+    )
+    if not investigator:
+        return False
+
+    changed = not investigator.is_active or not investigator.is_demo_account
+    if changed:
+        investigator.is_active = True
+        investigator.is_demo_account = True
+        await session.commit()
+        logger.info("Existing demo investigator account state reconciled")
+    return changed
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events."""
@@ -78,6 +103,8 @@ async def lifespan(app: FastAPI):
 
             await session.commit()
             logger.info("✅ Demo users created")
+
+        await reconcile_demo_investigator(session)
 
         # Ensure the RBAC foundation is complete even when an older demo DB
         # already contains the investigator/supervisor seed users.

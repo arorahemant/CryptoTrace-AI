@@ -5,6 +5,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.auth import _failed_logins, router as auth_router
@@ -12,7 +13,7 @@ from app.api.reporter import router as reporter_router
 from app.core.config import settings
 from app.core.database import Base, get_db
 from app.core.security import get_password_hash
-from app.main import capabilities
+from app.main import capabilities, reconcile_demo_investigator
 from app.models.models import ReporterAccount, User, UserRole
 
 
@@ -71,13 +72,34 @@ async def harness(tmp_path, monkeypatch):
 
     app.dependency_overrides[get_db] = session
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://test") as client:
-        yield SimpleNamespace(client=client)
+        yield SimpleNamespace(client=client, factory=factory)
     _failed_logins.clear()
     await engine.dispose()
 
 
 async def login(harness, username, password):
     return await harness.client.post("/api/v1/auth/login", json={"username": username, "password": password})
+
+
+@pytest.mark.asyncio
+async def test_reconciles_existing_inactive_demo_investigator_only(harness):
+    async with harness.factory.begin() as db:
+        investigator = await db.scalar(select(User).where(User.username == "investigator"))
+        investigator.is_active = False
+        investigator.is_demo_account = False
+
+    async with harness.factory() as db:
+        assert await reconcile_demo_investigator(db) is True
+
+    async with harness.factory() as db:
+        investigator = await db.scalar(select(User).where(User.username == "investigator"))
+        assert investigator.is_active is True
+        assert investigator.is_demo_account is True
+        assert investigator.role == UserRole.INVESTIGATOR
+        assert investigator.email == "investigator@cryptotrace.ai"
+
+    assert (await login(harness, "investigator", "investigate123")).status_code == 200
+    assert (await login(harness, "admin", "admin123")).status_code == 403
 
 
 @pytest.mark.asyncio
